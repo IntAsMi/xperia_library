@@ -2,22 +2,33 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val SonyOrange = Color(0xFFFF6000)
-val SonyOrangeHover = Color(0xFFFF7719)
-val SonyAlphaGreen = Color(0xFF00E676)
-val SonyAlphaRed = Color(0xFFFF3D00)
-val SonyAlphaYellow = Color(0xFFFFD600)
-val SonyAlphaBlue = Color(0xFF29B6F6)
+// Foobar / Audiophile DAP Studio Accents
+val DapAmber = Color(0xFFFF8A00)
+val DapCyan = Color(0xFF00E5FF)
+val DapGreen = Color(0xFF00E676)
+val DapRed = Color(0xFFFF3D00)
+val DapYellow = Color(0xFFFFD600)
 
-val SonyDarkChassis = Color(0xFF0B0C0E)
-val SonyPanelDark = Color(0xFF14161B)
-val SonyPanelLight = Color(0xFF1E2128)
-val SonyBorder = Color(0xFF2B2E38)
+// Dark Theme Studio Palette
+val DarkBg = Color(0xFF101216)
+val DarkSurface = Color(0xFF191B22)
+val DarkSurfaceElevated = Color(0xFF222530)
+val DarkBorder = Color(0xFF2E3240)
+val DarkTextPrimary = Color(0xFFEFF0F5)
+val DarkTextSecondary = Color(0xFF989BA8)
+val DarkTextMuted = Color(0xFF606474)
 
-val SonyTextPrimary = Color(0xFFF2F3F7)
-val SonyTextSecondary = Color(0xFFA0A3AF)
-val SonyTextMuted = Color(0xFF656875)
+// Light Theme Studio Palette
+val LightBg = Color(0xFFF2F4F7)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceElevated = Color(0xFFE5E8EF)
+val LightBorder = Color(0xFFD0D4DF)
+val LightTextPrimary = Color(0xFF16181E)
+val LightTextSecondary = Color(0xFF5A5E70)
+val LightTextMuted = Color(0xFF888D9E)
 
-val ShutterBezel = Color(0xFF333640)
-val ShutterRing = Color(0xFF1A1C22)
-val ShutterButtonActive = Color(0xFFFF6000)
+// AMOLED Black Palette
+val AmoledBg = Color(0xFF000000)
+val AmoledSurface = Color(0xFF07080A)
+val AmoledSurfaceElevated = Color(0xFF111216)
+val AmoledBorder = Color(0xFF20232B)

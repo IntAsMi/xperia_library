@@ -1,6 +1,6 @@
 {
-  "name": "Photography Pro",
-  "description": "Sony Xperia 1 VIII Photography Pro app bringing back the classic 1 V Alpha camera UI with next-gen 16-170mm optical zoom, AI Pose Estimation AF, 60fps burst, and manual Alpha controls.",
+  "name": "DAP Console",
+  "description": "A lightweight, folder-based digital audio player (DAP) with detailed audio specs, gapless playback, folder timings, Foobar-inspired technical UI, and custom themes.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

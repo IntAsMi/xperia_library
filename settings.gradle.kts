@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Photography Pro"
+rootProject.name = "DAP Console"
 
 include(":app")

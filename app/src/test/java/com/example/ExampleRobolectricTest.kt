@@ -2,14 +2,11 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.example.model.AiSubjectTracking
-import com.example.model.CreativeLook
-import com.example.model.DeviceProfile
-import com.example.model.DriveMode
-import com.example.model.LensOption
-import com.example.model.ShootingMode
+import com.example.model.AudioFileItem
+import com.example.model.DapThemeSetting
+import com.example.model.formatDuration
+import com.example.model.formatFileSize
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,41 +21,55 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
-    assertEquals("Photography Pro", appName)
+    assertEquals("DAP Console", appName)
   }
 
   @Test
-  fun `verify sony xperia 1 VIII lenses and telemacro`() {
-    assertEquals("16mm", LensOption.ULTRA_WIDE_16MM.focalLength)
-    assertEquals("24mm", LensOption.WIDE_24MM.focalLength)
-    assertEquals("48mm", LensOption.WIDE_48MM.focalLength)
-    assertEquals("85-170mm", LensOption.TELE_85_170MM.focalLength)
-    assertTrue(LensOption.TELE_85_170MM.isOpticalZoomModule)
-    assertTrue(LensOption.TELE_85_170MM.isTeleMacroCapable)
+  fun `verify duration formatting`() {
+    assertEquals("00:00", formatDuration(0L))
+    assertEquals("04:18", formatDuration(258_000L))
+    assertEquals("01:01:05", formatDuration(3_665_000L))
   }
 
   @Test
-  fun `verify device profiles and 60fps burst`() {
-    assertEquals("Xperia 1 VIII", DeviceProfile.XPERIA_1_VIII.modelName)
-    assertEquals("Xperia 1 V", DeviceProfile.XPERIA_1_V.modelName)
-    assertEquals(60, DriveMode.BURST_ULTRA.fps)
-    assertEquals("60", DriveMode.BURST_ULTRA.symbol)
-    assertNotNull(AiSubjectTracking.HUMAN)
-    assertNotNull(AiSubjectTracking.ANIMAL_BIRD)
-    assertNotNull(AiSubjectTracking.VEHICLE)
+  fun `verify file size formatting`() {
+    assertEquals("0 MB", formatFileSize(0L))
+    assertEquals("500 KB", formatFileSize(512_000L))
+    assertTrue(formatFileSize(58_420_000L).contains("55.7 MB") || formatFileSize(58_420_000L).contains("MB"))
   }
 
   @Test
-  fun `verify shooting modes and creative looks`() {
-    assertEquals("BASIC", ShootingMode.BASIC.label)
-    assertEquals("AUTO", ShootingMode.AUTO.label)
-    assertEquals("P", ShootingMode.P.label)
-    assertEquals("S", ShootingMode.S.label)
-    assertEquals("M", ShootingMode.M.label)
-    assertEquals("MR", ShootingMode.MR.label)
+  fun `verify theme settings`() {
+    val themes = DapThemeSetting.values()
+    assertEquals(5, themes.size)
+    assertTrue(themes.contains(DapThemeSetting.DARK))
+    assertTrue(themes.contains(DapThemeSetting.LIGHT))
+    assertTrue(themes.contains(DapThemeSetting.SYSTEM))
+    assertTrue(themes.contains(DapThemeSetting.MATERIAL_U))
+    assertTrue(themes.contains(DapThemeSetting.AMOLED_BLACK))
+  }
 
-    assertNotNull(CreativeLook.FL)
-    assertNotNull(CreativeLook.ST)
-    assertNotNull(CreativeLook.BW)
+  @Test
+  fun `verify audio file specs formatting`() {
+    val track = AudioFileItem(
+      id = "test_1",
+      uriString = "content://media/1",
+      title = "Symphony No. 5",
+      fileName = "01. Symphony.flac",
+      extension = ".flac",
+      filePath = "/Music/Beethoven/01. Symphony.flac",
+      durationMs = 240_000L,
+      sizeBytes = 45_000_000L,
+      sampleRate = 96000,
+      bitDepth = 24,
+      bitrateKbps = 2850,
+      channels = 2,
+      codec = "FLAC"
+    )
+    assertEquals("04:00", track.formattedDuration)
+    assertTrue(track.formattedSpecs.contains("FLAC"))
+    assertTrue(track.formattedSpecs.contains("96.0 kHz") || track.formattedSpecs.contains("96 kHz"))
+    assertTrue(track.formattedSpecs.contains("24-bit"))
+    assertTrue(track.formattedSpecs.contains("2850 kbps"))
   }
 }

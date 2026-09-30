@@ -1,0 +1,241 @@
+package com.example.viewmodel
+
+import android.app.Application
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.DapPreferences
+import com.example.data.FolderRepository
+import com.example.model.AudioFileItem
+import com.example.model.DapPlayerState
+import com.example.model.DapThemeSetting
+import com.example.model.FolderItem
+import com.example.player.DapAudioPlayer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+data class DapUiState(
+  val rootFolderUri: String? = null,
+  val currentFolderUri: String? = null,
+  val currentFolderPath: String = "/Music",
+  val currentFolderName: String = "All Music",
+  val subfolders: List<FolderItem> = emptyList(),
+  val audioFiles: List<AudioFileItem> = emptyList(),
+  val isLoading: Boolean = false,
+  val isNowPlayingExpanded: Boolean = false,
+  val isSettingsOpen: Boolean = false,
+  val folderHistory: List<Pair<String?, String>> = emptyList() // Pair(uri, displayPath)
+)
+
+class DapViewModel(application: Application) : AndroidViewModel(application) {
+  private val context = application.applicationContext
+  private val prefs = DapPreferences(context)
+  private val repository = FolderRepository(context)
+  val player = DapAudioPlayer(context)
+
+  private val _uiState = MutableStateFlow(DapUiState())
+  val uiState: StateFlow<DapUiState> = _uiState.asStateFlow()
+
+  val playerState: StateFlow<DapPlayerState> = player.state
+  val themeSetting: StateFlow<DapThemeSetting> = prefs.themeFlow
+
+  init {
+    loadInitialFolder()
+  }
+
+  private fun loadInitialFolder() {
+    viewModelScope.launch {
+      val savedRoot = prefs.getRootFolderUri()
+      val savedLast = prefs.getLastVisitedFolderUri() ?: savedRoot
+
+      _uiState.value = _uiState.value.copy(
+        rootFolderUri = savedRoot,
+        currentFolderUri = savedLast,
+        isLoading = true
+      )
+
+      val (folders, files) = repository.loadFolderContents(
+        folderUriString = savedLast,
+        rootUriString = savedRoot
+      )
+
+      val friendlyPath = if (savedLast != null) extractFriendlyPath(savedLast) else "/Music"
+      val folderName = if (savedLast != null) friendlyPath.substringAfterLast("/") else "Music Root"
+
+      _uiState.value = _uiState.value.copy(
+        subfolders = folders,
+        audioFiles = files,
+        currentFolderPath = friendlyPath,
+        currentFolderName = if (folderName.isBlank()) "Music Root" else folderName,
+        isLoading = false
+      )
+    }
+  }
+
+  fun setRootFolder(uri: Uri) {
+    val uriString = uri.toString()
+    prefs.setRootFolderUri(uriString)
+    prefs.setLastVisitedFolderUri(uriString)
+
+    val friendly = extractFriendlyPath(uriString)
+    val folderName = friendly.substringAfterLast("/").ifEmpty { "SD Card Music" }
+
+    _uiState.value = _uiState.value.copy(
+      rootFolderUri = uriString,
+      currentFolderUri = uriString,
+      currentFolderPath = friendly,
+      currentFolderName = folderName,
+      folderHistory = emptyList(),
+      isLoading = true
+    )
+
+    viewModelScope.launch {
+      val (folders, files) = repository.loadFolderContents(uriString, uriString)
+      _uiState.value = _uiState.value.copy(
+        subfolders = folders,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun openFolder(folder: FolderItem) {
+    val prevHistory = _uiState.value.folderHistory + (_uiState.value.currentFolderUri to _uiState.value.currentFolderPath)
+    prefs.setLastVisitedFolderUri(folder.uriString)
+
+    _uiState.value = _uiState.value.copy(
+      currentFolderUri = folder.uriString,
+      currentFolderPath = folder.path,
+      currentFolderName = folder.name,
+      folderHistory = prevHistory,
+      isLoading = true
+    )
+
+    viewModelScope.launch {
+      val (sub, files) = repository.loadFolderContents(folder.uriString, _uiState.value.rootFolderUri)
+      _uiState.value = _uiState.value.copy(
+        subfolders = sub,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun navigateUp() {
+    val history = _uiState.value.folderHistory
+    if (history.isEmpty()) {
+      // Return to root if not already there
+      val root = _uiState.value.rootFolderUri
+      if (_uiState.value.currentFolderUri != root) {
+        prefs.setLastVisitedFolderUri(root)
+        _uiState.value = _uiState.value.copy(
+          currentFolderUri = root,
+          currentFolderPath = if (root != null) extractFriendlyPath(root) else "/Music",
+          currentFolderName = "Music Root",
+          isLoading = true
+        )
+        viewModelScope.launch {
+          val (sub, files) = repository.loadFolderContents(root, root)
+          _uiState.value = _uiState.value.copy(
+            subfolders = sub,
+            audioFiles = files,
+            isLoading = false
+          )
+        }
+      }
+      return
+    }
+
+    val last = history.last()
+    val newHistory = history.dropLast(1)
+    prefs.setLastVisitedFolderUri(last.first)
+
+    val folderName = last.second.substringAfterLast("/").ifEmpty { "Music" }
+
+    _uiState.value = _uiState.value.copy(
+      currentFolderUri = last.first,
+      currentFolderPath = last.second,
+      currentFolderName = folderName,
+      folderHistory = newHistory,
+      isLoading = true
+    )
+
+    viewModelScope.launch {
+      val (sub, files) = repository.loadFolderContents(last.first, _uiState.value.rootFolderUri)
+      _uiState.value = _uiState.value.copy(
+        subfolders = sub,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun refreshFolder() {
+    val current = _uiState.value.currentFolderUri
+    _uiState.value = _uiState.value.copy(isLoading = true)
+    viewModelScope.launch {
+      val (sub, files) = repository.loadFolderContents(current, _uiState.value.rootFolderUri)
+      _uiState.value = _uiState.value.copy(
+        subfolders = sub,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun playTrack(track: AudioFileItem) {
+    player.playTrack(track, _uiState.value.audioFiles)
+  }
+
+  fun playCurrentFolder(shuffle: Boolean = false) {
+    player.playFolder(_uiState.value.audioFiles, startIndex = 0, shuffle = shuffle)
+  }
+
+  fun togglePlayPause() = player.togglePlayPause()
+  fun skipNext() = player.skipNext()
+  fun skipPrevious() = player.skipPrevious()
+  fun seekTo(positionMs: Long) = player.seekTo(positionMs)
+  fun toggleRepeat() = player.toggleRepeatMode()
+  fun toggleShuffle() = player.toggleShuffle()
+  fun setSpeed(speed: Float) = player.setPlaybackSpeed(speed)
+  fun setLoopPointA() = player.setLoopPointA()
+  fun setLoopPointB() = player.setLoopPointB()
+  fun clearLoopPoints() = player.clearLoopPoints()
+
+  fun setNowPlayingExpanded(expanded: Boolean) {
+    _uiState.value = _uiState.value.copy(isNowPlayingExpanded = expanded)
+  }
+
+  fun setSettingsOpen(open: Boolean) {
+    _uiState.value = _uiState.value.copy(isSettingsOpen = open)
+  }
+
+  fun setTheme(theme: DapThemeSetting) {
+    prefs.setTheme(theme)
+  }
+
+  private fun extractFriendlyPath(uriStr: String): String {
+    return try {
+      val decoded = Uri.decode(uriStr)
+      when {
+        decoded.contains(":") -> {
+          val segment = decoded.substringAfterLast(":")
+          if (segment.startsWith("/")) segment else "/$segment"
+        }
+        decoded.startsWith("virtual_demo://") -> {
+          "/SD_CARD/Music/" + decoded.substringAfterLast("/")
+        }
+        else -> decoded
+      }
+    } catch (_: Exception) {
+      "/Music"
+    }
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    player.release()
+  }
+}
