@@ -26,9 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.model.DeviceProfile
 import com.example.model.DriveMode
 import com.example.model.FileFormat
 import com.example.model.FlashMode
@@ -84,7 +82,6 @@ fun MainCameraScreen(
 
   var showCreativeLookSheet by remember { mutableStateOf(false) }
 
-  // Check camera permission
   val permissionLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.RequestPermission()
   ) { isGranted ->
@@ -102,7 +99,6 @@ fun MainCameraScreen(
     }
   }
 
-  // Gallery screen takes over if open
   if (uiState.isGalleryOpen) {
     AlphaPlaybackScreen(
       photos = photos,
@@ -122,14 +118,12 @@ fun MainCameraScreen(
     val isLandscape = maxWidth > maxHeight
 
     if (isLandscape) {
-      // Landscape Sony Alpha Camera Layout (similar to Xperia horizontal ergonomics)
       Row(
         modifier = Modifier
           .fillMaxSize()
           .statusBarsPadding()
           .navigationBarsPadding()
       ) {
-        // Left: Viewfinder
         Box(
           modifier = Modifier
             .weight(1f)
@@ -142,7 +136,6 @@ fun MainCameraScreen(
           )
         }
 
-        // Right: Control Hub & Shutter
         Column(
           modifier = Modifier
             .width(360.dp)
@@ -162,7 +155,8 @@ fun MainCameraScreen(
             onOpenWheel = { viewModel.setActiveWheel(it) },
             onToggleDriveMode = {
               val next = when (uiState.driveMode) {
-                DriveMode.SINGLE -> DriveMode.BURST_HI
+                DriveMode.SINGLE -> DriveMode.BURST_ULTRA
+                DriveMode.BURST_ULTRA -> DriveMode.BURST_HI
                 DriveMode.BURST_HI -> DriveMode.BURST_LO
                 DriveMode.BURST_LO -> DriveMode.TIMER_3S
                 DriveMode.TIMER_3S -> DriveMode.TIMER_10S
@@ -186,6 +180,7 @@ fun MainCameraScreen(
               }
               viewModel.setFocusArea(next)
             },
+            onToggleAiTracking = { viewModel.toggleAiSubjectTracking() },
             onToggleMetering = {
               val next = when (uiState.meteringMode) {
                 MeteringMode.MULTI -> MeteringMode.CENTER
@@ -221,7 +216,6 @@ fun MainCameraScreen(
             modifier = Modifier.fillMaxWidth()
           )
 
-          // Shutter + Gallery Bar
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -246,7 +240,6 @@ fun MainCameraScreen(
         }
       }
     } else {
-      // Portrait Layout
       Column(
         modifier = Modifier
           .fillMaxSize()
@@ -254,14 +247,12 @@ fun MainCameraScreen(
           .navigationBarsPadding(),
         verticalArrangement = Arrangement.SpaceBetween
       ) {
-        // 1. Top Mode Dial Bar
         ModeDialSelector(
           selectedMode = uiState.shootingMode,
           onSelectMode = { viewModel.setShootingMode(it) },
           modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
         )
 
-        // 2. Viewfinder Frame
         Box(
           modifier = Modifier
             .weight(1f)
@@ -274,7 +265,6 @@ fun MainCameraScreen(
           )
         }
 
-        // 3. Lower Control Panel: Fn Panel + Shutter Row
         Column(
           modifier = Modifier
             .fillMaxWidth()
@@ -286,7 +276,8 @@ fun MainCameraScreen(
             onOpenWheel = { viewModel.setActiveWheel(it) },
             onToggleDriveMode = {
               val next = when (uiState.driveMode) {
-                DriveMode.SINGLE -> DriveMode.BURST_HI
+                DriveMode.SINGLE -> DriveMode.BURST_ULTRA
+                DriveMode.BURST_ULTRA -> DriveMode.BURST_HI
                 DriveMode.BURST_HI -> DriveMode.BURST_LO
                 DriveMode.BURST_LO -> DriveMode.TIMER_3S
                 DriveMode.TIMER_3S -> DriveMode.TIMER_10S
@@ -310,6 +301,7 @@ fun MainCameraScreen(
               }
               viewModel.setFocusArea(next)
             },
+            onToggleAiTracking = { viewModel.toggleAiSubjectTracking() },
             onToggleMetering = {
               val next = when (uiState.meteringMode) {
                 MeteringMode.MULTI -> MeteringMode.CENTER
@@ -347,7 +339,6 @@ fun MainCameraScreen(
 
           Spacer(modifier = Modifier.height(10.dp))
 
-          // Shutter Row: Gallery Thumb, Center Spacer/Info, Physical Shutter Button
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -358,10 +349,9 @@ fun MainCameraScreen(
               onClick = { viewModel.openGallery(photos.firstOrNull()) }
             )
 
-            // Center Xperia Branding
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
               Text(
-                text = "XPERIA 1 V",
+                text = if (uiState.deviceProfile == DeviceProfile.XPERIA_1_VIII) "XPERIA 1 VIII" else "XPERIA 1 V",
                 color = SonyOrange,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -392,7 +382,6 @@ fun MainCameraScreen(
       }
     }
 
-    // Overlays: Dial Wheels (Shutter, ISO, EV, WB, MF)
     AnimatedVisibility(
       visible = uiState.activeWheel != ActiveWheel.NONE,
       enter = slideInVertically(initialOffsetY = { it }),
@@ -417,7 +406,6 @@ fun MainCameraScreen(
       )
     }
 
-    // Overlays: Creative Look Selector Sheet
     AnimatedVisibility(
       visible = showCreativeLookSheet,
       enter = slideInVertically(initialOffsetY = { it }),
@@ -434,7 +422,6 @@ fun MainCameraScreen(
       )
     }
 
-    // Overlays: Settings Menu Sheet
     AnimatedVisibility(
       visible = uiState.isMenuOpen,
       enter = slideInVertically(initialOffsetY = { it }),
@@ -447,7 +434,6 @@ fun MainCameraScreen(
       )
     }
 
-    // Memory Saved Toast Notification
     if (uiState.memorySlotSavedAlert != null) {
       Box(
         modifier = Modifier

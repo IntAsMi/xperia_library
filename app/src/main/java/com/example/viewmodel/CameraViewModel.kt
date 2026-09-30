@@ -26,8 +26,10 @@ import com.example.audio.SoundFeedback
 import com.example.data.PhotoDatabase
 import com.example.data.PhotoEntity
 import com.example.data.PresetEntity
+import com.example.model.AiSubjectTracking
 import com.example.model.AspectRatio
 import com.example.model.CreativeLook
+import com.example.model.DeviceProfile
 import com.example.model.DriveMode
 import com.example.model.FileFormat
 import com.example.model.FlashMode
@@ -68,9 +70,12 @@ enum class ActiveWheel {
 }
 
 data class CameraUiState(
+  val deviceProfile: DeviceProfile = DeviceProfile.XPERIA_1_VIII,
   val shootingMode: ShootingMode = ShootingMode.AUTO,
   val selectedLens: LensOption = LensOption.WIDE_24MM,
   val currentZoomRatio: Float = 1.0f,
+  val isTeleMacroActive: Boolean = false,
+  val aiSubjectTracking: AiSubjectTracking = AiSubjectTracking.HUMAN,
   val driveMode: DriveMode = DriveMode.SINGLE,
   val focusMode: FocusMode = FocusMode.AF_C,
   val focusArea: FocusArea = FocusArea.WIDE,
@@ -155,7 +160,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             filePath = "sample_cinematic",
             timestamp = System.currentTimeMillis() - 3600_000 * 2,
             lensFocalLength = "24mm",
-            aperture = "F1.9",
+            aperture = "F1.8",
             shutterSpeed = "1/125",
             iso = "400",
             ev = "+0.3",
@@ -182,6 +187,40 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         )
       }
     }
+  }
+
+  fun setDeviceProfile(profile: DeviceProfile) {
+    soundFeedback.vibrateDialTick()
+    val defaultLens = if (profile == DeviceProfile.XPERIA_1_VIII) LensOption.WIDE_24MM else LensOption.CLASSIC_24MM
+    _uiState.value = _uiState.value.copy(
+      deviceProfile = profile,
+      selectedLens = defaultLens,
+      currentZoomRatio = 1.0f,
+      isTeleMacroActive = false
+    )
+    generateSimulatedAfPoints()
+  }
+
+  fun toggleAiSubjectTracking() {
+    soundFeedback.vibrateDialTick()
+    val next = when (_uiState.value.aiSubjectTracking) {
+      AiSubjectTracking.OFF -> AiSubjectTracking.HUMAN
+      AiSubjectTracking.HUMAN -> AiSubjectTracking.ANIMAL_BIRD
+      AiSubjectTracking.ANIMAL_BIRD -> AiSubjectTracking.VEHICLE
+      AiSubjectTracking.VEHICLE -> AiSubjectTracking.OFF
+    }
+    _uiState.value = _uiState.value.copy(aiSubjectTracking = next)
+    generateSimulatedAfPoints()
+  }
+
+  fun toggleTeleMacro() {
+    soundFeedback.vibrateDialTick()
+    val newMacroState = !_uiState.value.isTeleMacroActive
+    _uiState.value = _uiState.value.copy(
+      isTeleMacroActive = newMacroState,
+      peakingEnabled = newMacroState || _uiState.value.peakingEnabled,
+      focusMode = if (newMacroState) FocusMode.MF else _uiState.value.focusMode
+    )
   }
 
   fun setCameraPermissionGranted(granted: Boolean) {
@@ -236,20 +275,21 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
-  // Lens Selection (16mm, 24mm, 48mm, 85-125mm)
+  // Lens Selection
   fun selectLens(lens: LensOption) {
     soundFeedback.vibrateDialTick()
     val newZoom = lens.baseZoom
     _uiState.value = _uiState.value.copy(
       selectedLens = lens,
-      currentZoomRatio = newZoom
+      currentZoomRatio = newZoom,
+      isTeleMacroActive = false
     )
     applyZoomRatio(newZoom)
     generateSimulatedAfPoints()
   }
 
   fun setContinuousZoom(zoom: Float) {
-    val clamped = zoom.coerceIn(0.6f, 15.6f)
+    val clamped = zoom.coerceIn(0.6f, 21.3f)
     _uiState.value = _uiState.value.copy(currentZoomRatio = clamped)
     applyZoomRatio(clamped)
   }
@@ -283,7 +323,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
   private fun applyExposureCompensation(evString: String) {
     try {
       val evFloat = evString.replace("+", "").toFloatOrNull() ?: 0f
-      // 1/3 EV steps roughly
       val index = (evFloat * 3).toInt()
       camera?.cameraControl?.setExposureCompensationIndex(index)
     } catch (_: Exception) {}
@@ -308,7 +347,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     soundFeedback.vibrateDialTick()
     _uiState.value = _uiState.value.copy(
       focusMode = mode,
-      peakingEnabled = (mode == FocusMode.MF)
+      peakingEnabled = (mode == FocusMode.MF) || _uiState.value.isTeleMacroActive
     )
   }
 
@@ -408,14 +447,13 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
   // Tap to Focus in Viewfinder
   fun onUserTapFocus(normX: Float, normY: Float) {
-    val point = FocusPoint(normX, normY, isLocked = true, isEyeAf = false)
+    val point = FocusPoint(normX, normY, isLocked = true, isEyeAf = false, label = "LOCK")
     _uiState.value = _uiState.value.copy(
       focusPoints = listOf(point),
       isAfLocked = true
     )
     soundFeedback.playAfLockSound()
 
-    // Trigger CameraX tap to focus if camera is bound
     try {
       val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
       val meteringPoint = factory.createPoint(normX, normY)
@@ -433,7 +471,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
   /**
    * Two-Stage Physical Shutter Button Emulation:
-   * Half-press triggers AF-ON lock and calculates exposure.
+   * Half-press triggers AF-ON lock and meters exposure.
    */
   fun onShutterHalfPress(isPressed: Boolean) {
     if (isPressed) {
@@ -457,21 +495,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
   fun onShutterFullPress() {
     val drive = _uiState.value.driveMode
     when (drive) {
-      DriveMode.SINGLE -> {
-        executeShutterCapture()
-      }
-      DriveMode.TIMER_3S -> {
-        startTimerCountdown(3)
-      }
-      DriveMode.TIMER_10S -> {
-        startTimerCountdown(10)
-      }
-      DriveMode.BURST_HI -> {
-        startBurstShooting(DriveMode.BURST_HI)
-      }
-      DriveMode.BURST_LO -> {
-        startBurstShooting(DriveMode.BURST_LO)
-      }
+      DriveMode.SINGLE -> executeShutterCapture()
+      DriveMode.TIMER_3S -> startTimerCountdown(3)
+      DriveMode.TIMER_10S -> startTimerCountdown(10)
+      DriveMode.BURST_ULTRA -> startBurstShooting(DriveMode.BURST_ULTRA)
+      DriveMode.BURST_HI -> startBurstShooting(DriveMode.BURST_HI)
+      DriveMode.BURST_LO -> startBurstShooting(DriveMode.BURST_LO)
     }
   }
 
@@ -498,11 +527,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
   private fun startBurstShooting(mode: DriveMode) {
     burstJob?.cancel()
     _uiState.value = _uiState.value.copy(isBurstShooting = true, burstCount = 0)
-    val intervalMs = if (mode == DriveMode.BURST_HI) 33L else 100L // 30fps or 10fps
+    val intervalMs = when (mode) {
+      DriveMode.BURST_ULTRA -> 16L // 60fps Xperia 1 VIII ultra burst!
+      DriveMode.BURST_HI -> 33L    // 30fps
+      else -> 100L                 // 10fps
+    }
+    val maxFrames = if (mode == DriveMode.BURST_ULTRA) 60 else 30
 
     burstJob = viewModelScope.launch {
       var count = 0
-      while (count < 30) { // burst limit per hold
+      while (count < maxFrames) {
         count++
         _uiState.value = _uiState.value.copy(burstCount = count)
         executeShutterCapture(isSilent = count > 1)
@@ -518,7 +552,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
     _uiState.value = _uiState.value.copy(shutterFlashTrigger = System.currentTimeMillis())
 
-    // Capture using CameraX if bound, otherwise fallback to synthetic high quality frame
     val capture = imageCapture
     if (capture != null && _uiState.value.isCameraPermissionGranted) {
       saveCameraXShot(capture)
@@ -542,7 +575,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         override fun onError(exception: ImageCaptureException) {
-          Log.w("CameraViewModel", "CameraX capture error: ${exception.message}, falling back to synthetic", exception)
+          Log.w("CameraViewModel", "CameraX capture error: ${exception.message}", exception)
           saveSimulatedShot()
         }
       }
@@ -556,14 +589,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
         val photoFile = File(photoDir, "PHOTO_PRO_${timeStamp}.jpg")
 
-        // Generate synthetic photo bitmap reflecting creative look and exposure
         val width = 1920
         val height = 1080
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Draw background gradient inspired by Sony Alpha imagery
         val look = _uiState.value.creativeLook
         val topColor = when (look) {
           CreativeLook.BW -> AndroidColor.rgb(30, 30, 30)
@@ -587,15 +618,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         paint.shader = shader
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
 
-        // Overlay Sony Alpha watermark & EXIF data on bottom corner
         paint.shader = null
         paint.color = AndroidColor.argb(160, 0, 0, 0)
         canvas.drawRect(0f, height - 120f, width.toFloat(), height.toFloat(), paint)
 
-        paint.color = AndroidColor.rgb(255, 96, 0) // Sony Orange
+        paint.color = AndroidColor.rgb(255, 96, 0)
         paint.textSize = 34f
         paint.isFakeBoldText = true
-        canvas.drawText("SONY α | Xperia Photography Pro", 60f, height - 60f, paint)
+        val modelBrand = if (_uiState.value.deviceProfile == DeviceProfile.XPERIA_1_VIII) "SONY α | Xperia 1 VIII Photography Pro" else "SONY α | Xperia 1 V Photography Pro"
+        canvas.drawText(modelBrand, 60f, height - 60f, paint)
 
         paint.color = AndroidColor.WHITE
         paint.textSize = 28f
@@ -644,7 +675,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
   }
 
   // Memory Recall (MR) Presets
-  fun saveMemoryPreset(slotKey: String) { // "M1", "M2", "M3"
+  fun saveMemoryPreset(slotKey: String) {
     viewModelScope.launch {
       val state = _uiState.value
       val preset = PresetEntity(
@@ -691,7 +722,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
   }
 
-  // Gallery Review UI
   fun openGallery(photo: PhotoEntity? = null) {
     _uiState.value = _uiState.value.copy(
       isGalleryOpen = true,
@@ -710,7 +740,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     _uiState.value = _uiState.value.copy(selectedPhotoForReview = photo)
   }
 
-  // Settings Menu
   fun openMenu() {
     _uiState.value = _uiState.value.copy(isMenuOpen = true)
   }
@@ -721,24 +750,41 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
   private fun generateSimulatedAfPoints() {
     val points = mutableListOf<FocusPoint>()
-    val area = _uiState.value.focusArea
-    when (area) {
-      FocusArea.WIDE -> {
-        // High density 9-point Alpha array
-        val xs = listOf(0.35f, 0.5f, 0.65f)
-        val ys = listOf(0.4f, 0.5f, 0.6f)
-        for (x in xs) {
-          for (y in ys) {
-            points.add(FocusPoint(x, y, isLocked = false, isEyeAf = false))
+    val aiMode = _uiState.value.aiSubjectTracking
+
+    if (aiMode != AiSubjectTracking.OFF) {
+      when (aiMode) {
+        AiSubjectTracking.HUMAN -> {
+          // AI Pose Estimation & Eye AF tracking reticle
+          points.add(FocusPoint(0.51f, 0.38f, isLocked = false, isEyeAf = true, label = "EYE [R]"))
+          points.add(FocusPoint(0.50f, 0.48f, isLocked = false, isAiBodyPose = true, label = "POSE"))
+        }
+        AiSubjectTracking.ANIMAL_BIRD -> {
+          points.add(FocusPoint(0.48f, 0.45f, isLocked = false, isEyeAf = true, label = "ANIMAL EYE"))
+        }
+        AiSubjectTracking.VEHICLE -> {
+          points.add(FocusPoint(0.50f, 0.55f, isLocked = false, isAiBodyPose = true, label = "VEHICLE"))
+        }
+        else -> {}
+      }
+    } else {
+      val area = _uiState.value.focusArea
+      when (area) {
+        FocusArea.WIDE -> {
+          val xs = listOf(0.35f, 0.5f, 0.65f)
+          val ys = listOf(0.4f, 0.5f, 0.6f)
+          for (x in xs) {
+            for (y in ys) {
+              points.add(FocusPoint(x, y, isLocked = false, isEyeAf = false))
+            }
           }
         }
-      }
-      FocusArea.CENTER -> {
-        points.add(FocusPoint(0.5f, 0.5f, isLocked = false, isEyeAf = false))
-      }
-      FocusArea.TRACKING -> {
-        // Eye AF simulated tracking box on upper center
-        points.add(FocusPoint(0.52f, 0.42f, isLocked = false, isEyeAf = true))
+        FocusArea.CENTER -> {
+          points.add(FocusPoint(0.5f, 0.5f, isLocked = false, isEyeAf = false))
+        }
+        FocusArea.TRACKING -> {
+          points.add(FocusPoint(0.52f, 0.42f, isLocked = false, isEyeAf = true, label = "TRACK"))
+        }
       }
     }
     _uiState.value = _uiState.value.copy(focusPoints = points, isAfLocked = false)

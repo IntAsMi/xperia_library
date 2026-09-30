@@ -1,5 +1,10 @@
 package com.example.model
 
+enum class DeviceProfile(val modelName: String, val chipName: String, val tagline: String) {
+  XPERIA_1_VIII("Xperia 1 VIII", "Snapdragon 8 Gen 5 + Sony AI Processing Unit", "Next-Gen Optical & AI Camera Engine"),
+  XPERIA_1_V("Xperia 1 V", "Snapdragon 8 Gen 2", "Classic 2023 Photography Pro Heritage")
+}
+
 enum class ShootingMode(val label: String, val description: String) {
   BASIC("BASIC", "Streamlined mobile shooting with quick bokeh and color controls"),
   AUTO("AUTO", "Alpha intelligent auto with scene detection and Auto HDR"),
@@ -16,16 +21,32 @@ enum class LensOption(
   val baseZoom: Float,
   val minZoom: Float,
   val maxZoom: Float,
-  val isOpticalZoomModule: Boolean = false
+  val isOpticalZoomModule: Boolean = false,
+  val isTeleMacroCapable: Boolean = false
 ) {
-  ULTRA_WIDE_16MM("16mm", "F2.2", "1/2.5\" Exmor RS", 0.6f, 0.6f, 0.9f),
-  WIDE_24MM("24mm", "F1.9", "1/1.35\" Exmor T for mobile", 1.0f, 1.0f, 1.9f),
-  WIDE_48MM("48mm", "F1.9", "2x Lossless Sensor Crop", 2.0f, 2.0f, 3.4f),
-  TELE_85_125MM("85-125mm", "F2.3-F2.8", "True Continuous Optical Zoom", 3.5f, 3.5f, 15.6f, true)
+  // Xperia 1 VIII Optics
+  ULTRA_WIDE_16MM("16mm", "F2.0", "1/2.0\" Exmor T for mobile", 0.6f, 0.6f, 0.9f),
+  WIDE_24MM("24mm", "F1.8", "1/1.28\" Exmor T 48MP dual-layer", 1.0f, 1.0f, 1.9f),
+  WIDE_48MM("48mm", "F1.8", "2x Lossless Sensor Crop", 2.0f, 2.0f, 3.4f),
+  TELE_85_170MM("85-170mm", "F2.3-F3.5", "Continuous Optical Periscope Zoom", 3.5f, 3.5f, 21.3f, true, true),
+
+  // Xperia 1 V Heritage Optics (Legacy Profile)
+  CLASSIC_16MM("16mm", "F2.2", "1/2.5\" Exmor RS", 0.6f, 0.6f, 0.9f),
+  CLASSIC_24MM("24mm", "F1.9", "1/1.35\" Exmor T for mobile", 1.0f, 1.0f, 1.9f),
+  CLASSIC_48MM("48mm", "F1.9", "2x Lossless Sensor Crop", 2.0f, 2.0f, 3.4f),
+  CLASSIC_85_125MM("85-125mm", "F2.3-F2.8", "True Continuous Optical Zoom", 3.5f, 3.5f, 15.6f, true, false)
+}
+
+enum class AiSubjectTracking(val label: String, val shortName: String) {
+  OFF("Standard AF Array", "AF-STD"),
+  HUMAN("AI Human (Eye/Body Pose)", "AI-HUMAN"),
+  ANIMAL_BIRD("AI Animal / Bird Eye AF", "AI-ANIMAL"),
+  VEHICLE("AI Vehicle / Aircraft", "AI-VEHICLE")
 }
 
 enum class DriveMode(val label: String, val symbol: String, val fps: Int = 1) {
   SINGLE("Single Shooting", "1S", 1),
+  BURST_ULTRA("Continuous Shooting: Ultra (60fps)", "60", 60),
   BURST_HI("Continuous Shooting: Hi (30fps)", "Hi", 30),
   BURST_LO("Continuous Shooting: Lo (10fps)", "Lo", 10),
   TIMER_3S("Self-timer: 3 sec", "3s", 0),

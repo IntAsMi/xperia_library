@@ -17,14 +17,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Camera
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.GridOn
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShutterSpeed
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,11 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AiSubjectTracking
 import com.example.model.DriveMode
 import com.example.model.FileFormat
 import com.example.model.FlashMode
@@ -62,6 +55,7 @@ fun AlphaFnPanel(
   onToggleDriveMode: () -> Unit,
   onToggleFocusMode: () -> Unit,
   onToggleFocusArea: () -> Unit,
+  onToggleAiTracking: () -> Unit,
   onToggleMetering: () -> Unit,
   onToggleFlash: () -> Unit,
   onToggleFormat: () -> Unit,
@@ -132,12 +126,17 @@ fun AlphaFnPanel(
       verticalArrangement = Arrangement.spacedBy(6.dp),
       modifier = Modifier.fillMaxWidth()
     ) {
-      // Tile 1: DRIVE MODE
+      // Tile 1: DRIVE MODE (includes 60fps Ultra Burst)
       item {
         FnTile(
           label = "DRIVE",
           value = uiState.driveMode.symbol,
-          subValue = if (uiState.driveMode == DriveMode.BURST_HI) "30fps" else "",
+          subValue = when (uiState.driveMode) {
+            DriveMode.BURST_ULTRA -> "60fps"
+            DriveMode.BURST_HI -> "30fps"
+            DriveMode.BURST_LO -> "10fps"
+            else -> ""
+          },
           highlight = uiState.driveMode != DriveMode.SINGLE,
           onClick = onToggleDriveMode
         )
@@ -159,13 +158,13 @@ fun AlphaFnPanel(
         )
       }
 
-      // Tile 3: FOCUS AREA
+      // Tile 3: AI SUBJECT TRACKING (Xperia 1 VIII Next-Gen feature)
       item {
         FnTile(
-          label = "AREA",
-          value = uiState.focusArea.shortName,
-          highlight = uiState.focusArea == FocusArea.TRACKING,
-          onClick = onToggleFocusArea
+          label = "AI AF",
+          value = uiState.aiSubjectTracking.shortName,
+          highlight = uiState.aiSubjectTracking != AiSubjectTracking.OFF,
+          onClick = onToggleAiTracking
         )
       }
 
@@ -288,7 +287,6 @@ fun ExposureBarMeter(
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // Shutter speed button
       Column(
         modifier = Modifier
           .clickable(enabled = shootingMode == ShootingMode.S || shootingMode == ShootingMode.M) {
@@ -312,7 +310,6 @@ fun ExposureBarMeter(
         )
       }
 
-      // Aperture (Fixed optical physical f-stop of current lens)
       Column(
         modifier = Modifier.padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -332,7 +329,6 @@ fun ExposureBarMeter(
         )
       }
 
-      // Exposure EV
       Column(
         modifier = Modifier
           .clickable { onTapEv() }
@@ -354,7 +350,6 @@ fun ExposureBarMeter(
         )
       }
 
-      // ISO
       Column(
         modifier = Modifier
           .clickable(enabled = shootingMode != ShootingMode.BASIC) {

@@ -1,6 +1,6 @@
 {
   "name": "Photography Pro",
-  "description": "A lightweight replica of the Sony Xperia 1 V Photography Pro app with Alpha camera UI, manual controls, real-time AF, lens switching, Creative Looks, and live viewfinder.",
+  "description": "Sony Xperia 1 VIII Photography Pro app bringing back the classic 1 V Alpha camera UI with next-gen 16-170mm optical zoom, AI Pose Estimation AF, 60fps burst, and manual Alpha controls.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

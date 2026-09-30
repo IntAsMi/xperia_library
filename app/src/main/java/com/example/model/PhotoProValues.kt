@@ -35,5 +35,7 @@ data class FocusPoint(
   val x: Float, // Normalized 0..1 in viewfinder
   val y: Float, // Normalized 0..1 in viewfinder
   val isLocked: Boolean = false,
-  val isEyeAf: Boolean = false
+  val isEyeAf: Boolean = false,
+  val isAiBodyPose: Boolean = false,
+  val label: String = ""
 )

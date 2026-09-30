@@ -45,8 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.model.AiSubjectTracking
 import com.example.model.AspectRatio
 import com.example.model.CreativeLook
+import com.example.model.DeviceProfile
 import com.example.model.FocusMode
 import com.example.model.FocusPoint
 import com.example.model.GridType
@@ -120,7 +122,6 @@ fun AlphaViewfinder(
           modifier = Modifier.fillMaxSize()
         )
       } else {
-        // High-fidelity synthetic preview with dynamic exposure & creative look grading
         SyntheticLiveView(
           creativeLook = uiState.creativeLook,
           exposureComp = uiState.exposureComp,
@@ -142,15 +143,15 @@ fun AlphaViewfinder(
         )
       }
 
-      // 4. Focus Peaking Simulation Overlay in MF mode
-      if (uiState.peakingEnabled && uiState.focusMode == FocusMode.MF) {
+      // 4. Focus Peaking Simulation Overlay in MF / Telemacro mode
+      if (uiState.peakingEnabled && (uiState.focusMode == FocusMode.MF || uiState.isTeleMacroActive)) {
         PeakingOverlay(
           colorIndex = uiState.peakingColorIndex,
           modifier = Modifier.matchParentSize()
         )
       }
 
-      // 5. Sony Alpha AF Target Brackets & Tracking Boxes
+      // 5. Sony Alpha AF Target Brackets & AI Subject Pose Overlay
       AfPointsOverlay(
         focusPoints = uiState.focusPoints,
         isAfLocked = uiState.isAfLocked,
@@ -159,6 +160,9 @@ fun AlphaViewfinder(
 
       // 6. Top Status Bar Overlay (Alpha Camera Readouts)
       TopStatusBar(
+        deviceProfile = uiState.deviceProfile,
+        aiTracking = uiState.aiSubjectTracking,
+        isTeleMacro = uiState.isTeleMacroActive,
         battery = "86%",
         shotsLeft = "9999+",
         format = uiState.fileFormat.label,
@@ -184,10 +188,13 @@ fun AlphaViewfinder(
 
       // 8. Lens Selection Bar Floating at Bottom
       AlphaLensBar(
+        deviceProfile = uiState.deviceProfile,
         selectedLens = uiState.selectedLens,
         currentZoomRatio = uiState.currentZoomRatio,
+        isTeleMacroActive = uiState.isTeleMacroActive,
         onSelectLens = { viewModel.selectLens(it) },
         onZoomChange = { viewModel.setContinuousZoom(it) },
+        onToggleTeleMacro = { viewModel.toggleTeleMacro() },
         modifier = Modifier
           .align(Alignment.BottomCenter)
           .padding(bottom = 12.dp)
@@ -207,6 +214,9 @@ fun AlphaViewfinder(
 
 @Composable
 fun TopStatusBar(
+  deviceProfile: DeviceProfile,
+  aiTracking: AiSubjectTracking,
+  isTeleMacro: Boolean,
   battery: String,
   shotsLeft: String,
   format: String,
@@ -218,75 +228,107 @@ fun TopStatusBar(
 ) {
   Row(
     modifier = modifier
-      .background(Color.Black.copy(alpha = 0.5f))
-      .padding(horizontal = 12.dp, vertical = 6.dp),
+      .background(Color.Black.copy(alpha = 0.55f))
+      .padding(horizontal = 10.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    // Mode Badge (Alpha Orange badge)
+    // Model Profile Badge e.g. [1 VIII | α] or [1 V | α]
     Box(
       modifier = Modifier
         .clip(RoundedCornerShape(3.dp))
-        .background(SonyOrange)
-        .padding(horizontal = 6.dp, vertical = 2.dp)
+        .background(Color(0xFF222530))
+        .border(1.dp, SonyOrange, RoundedCornerShape(3.dp))
+        .padding(horizontal = 5.dp, vertical = 2.dp)
     ) {
       Text(
-        text = shootingMode.label,
-        color = Color.White,
-        fontSize = 10.sp,
+        text = if (deviceProfile == DeviceProfile.XPERIA_1_VIII) "1 VIII | α" else "1 V | α",
+        color = SonyOrange,
+        fontSize = 9.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace
       )
     }
 
-    Spacer(modifier = Modifier.width(10.dp))
+    Spacer(modifier = Modifier.width(6.dp))
+
+    // Shooting Mode Badge
+    Box(
+      modifier = Modifier
+        .clip(RoundedCornerShape(3.dp))
+        .background(SonyOrange)
+        .padding(horizontal = 5.dp, vertical = 2.dp)
+    ) {
+      Text(
+        text = shootingMode.label,
+        color = Color.White,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace
+      )
+    }
+
+    // AI Tracking Badge if active
+    if (aiTracking != AiSubjectTracking.OFF) {
+      Spacer(modifier = Modifier.width(6.dp))
+      Text(
+        text = "[${aiTracking.shortName}]",
+        color = SonyAlphaGreen,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace
+      )
+    }
+
+    // Tele-macro indicator badge
+    if (isTeleMacro) {
+      Spacer(modifier = Modifier.width(6.dp))
+      Text(
+        text = "[MACRO]",
+        color = SonyAlphaYellow,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace
+      )
+    }
+
+    Spacer(modifier = Modifier.width(6.dp))
 
     // Format & capacity: [RAW+J] 9999+
     Text(
       text = "[$format] $shotsLeft",
       color = Color.White.copy(alpha = 0.9f),
-      fontSize = 11.sp,
+      fontSize = 10.sp,
       fontFamily = FontFamily.Monospace,
       fontWeight = FontWeight.Medium
     )
 
-    Spacer(modifier = Modifier.width(10.dp))
+    Spacer(modifier = Modifier.weight(1f))
 
     // Creative look badge
     Text(
-      text = "LOOK: $creativeLook",
+      text = creativeLook,
       color = if (creativeLook != "ST") SonyOrange else Color.White.copy(alpha = 0.8f),
-      fontSize = 11.sp,
+      fontSize = 10.sp,
       fontFamily = FontFamily.Monospace
     )
 
-    if (dro) {
-      Spacer(modifier = Modifier.width(8.dp))
-      Text(
-        text = "D-R",
-        color = SonyAlphaGreen,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace
-      )
-    }
-
-    Spacer(modifier = Modifier.weight(1f))
+    Spacer(modifier = Modifier.width(8.dp))
 
     // Aspect ratio
     Text(
       text = aspectRatio,
       color = Color.White.copy(alpha = 0.85f),
-      fontSize = 11.sp,
+      fontSize = 10.sp,
       fontFamily = FontFamily.Monospace
     )
 
-    Spacer(modifier = Modifier.width(10.dp))
+    Spacer(modifier = Modifier.width(8.dp))
 
     // Battery percentage
     Text(
       text = battery,
       color = Color.White,
-      fontSize = 11.sp,
+      fontSize = 10.sp,
       fontFamily = FontFamily.Monospace,
       fontWeight = FontWeight.Bold
     )
@@ -305,10 +347,8 @@ fun ViewfinderGrid(
 
     when (gridType) {
       GridType.RULE_OF_THIRDS -> {
-        // Vertical thirds
         drawLine(gridColor, Offset(w / 3f, 0f), Offset(w / 3f, h), 1f)
         drawLine(gridColor, Offset(2f * w / 3f, 0f), Offset(2f * w / 3f, h), 1f)
-        // Horizontal thirds
         drawLine(gridColor, Offset(0f, h / 3f), Offset(w, h / 3f), 1f)
         drawLine(gridColor, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f), 1f)
       }
@@ -337,7 +377,7 @@ fun AfPointsOverlay(
   modifier: Modifier = Modifier
 ) {
   Canvas(modifier = modifier.fillMaxSize()) {
-    val boxColor = if (isAfLocked) SonyAlphaGreen else Color.White.copy(alpha = 0.6f)
+    val boxColor = if (isAfLocked) SonyAlphaGreen else Color.White.copy(alpha = 0.65f)
     val strokeWidth = if (isAfLocked) 2.5f else 1.2f
 
     for (pt in focusPoints) {
@@ -345,8 +385,8 @@ fun AfPointsOverlay(
       val cy = pt.y * size.height
 
       if (pt.isEyeAf) {
-        // Eye AF simulated tracking reticle (Square with target dot)
-        val eyeSize = 36f
+        // Sony Alpha Eye AF target reticle (Real-time Eye AF)
+        val eyeSize = 34f
         drawRect(
           color = boxColor,
           topLeft = Offset(cx - eyeSize / 2f, cy - eyeSize / 2f),
@@ -358,8 +398,22 @@ fun AfPointsOverlay(
           radius = 3f,
           center = Offset(cx, cy)
         )
+      } else if (pt.isAiBodyPose) {
+        // Sony Alpha AI Body Pose estimation tracking reticle
+        val poseW = 70f
+        val poseH = 110f
+        drawRect(
+          color = boxColor.copy(alpha = 0.75f),
+          topLeft = Offset(cx - poseW / 2f, cy - poseH / 2f),
+          size = Size(poseW, poseH),
+          style = Stroke(width = 1.2f)
+        )
+        // Joint markers
+        drawCircle(color = boxColor, radius = 2.5f, center = Offset(cx - 20f, cy - 30f))
+        drawCircle(color = boxColor, radius = 2.5f, center = Offset(cx + 20f, cy - 30f))
+        drawCircle(color = boxColor, radius = 2.5f, center = Offset(cx, cy + 20f))
       } else {
-        // Sony Alpha Bracket Style AF Box `[ ]`
+        // Bracket Style AF Box `[ ]`
         val s = 22f
         val arm = 6f
         val left = cx - s / 2f
@@ -367,19 +421,12 @@ fun AfPointsOverlay(
         val top = cy - s / 2f
         val bottom = cy + s / 2f
 
-        // Top-left corner
         drawLine(boxColor, Offset(left, top), Offset(left + arm, top), strokeWidth)
         drawLine(boxColor, Offset(left, top), Offset(left, top + arm), strokeWidth)
-
-        // Top-right corner
         drawLine(boxColor, Offset(right, top), Offset(right - arm, top), strokeWidth)
         drawLine(boxColor, Offset(right, top), Offset(right, top + arm), strokeWidth)
-
-        // Bottom-left corner
         drawLine(boxColor, Offset(left, bottom), Offset(left + arm, bottom), strokeWidth)
         drawLine(boxColor, Offset(left, bottom), Offset(left, bottom - arm), strokeWidth)
-
-        // Bottom-right corner
         drawLine(boxColor, Offset(right, bottom), Offset(right - arm, bottom), strokeWidth)
         drawLine(boxColor, Offset(right, bottom), Offset(right, bottom - arm), strokeWidth)
       }
@@ -393,17 +440,16 @@ fun PeakingOverlay(
   modifier: Modifier = Modifier
 ) {
   val peakingColor = when (colorIndex) {
-    0 -> Color.White.copy(alpha = 0.7f)
-    1 -> SonyAlphaYellow.copy(alpha = 0.7f)
-    else -> SonyAlphaRed.copy(alpha = 0.7f)
+    0 -> Color.White.copy(alpha = 0.75f)
+    1 -> SonyAlphaYellow.copy(alpha = 0.75f)
+    else -> SonyAlphaRed.copy(alpha = 0.75f)
   }
 
   Canvas(modifier = modifier.fillMaxSize()) {
-    // Generate simulated high contrast peaking edges
     val w = size.width
     val h = size.height
     val random = java.util.Random(101)
-    val pointsCount = 45
+    val pointsCount = 50
     for (i in 0 until pointsCount) {
       val x = w * (0.3f + random.nextFloat() * 0.4f)
       val y = h * (0.35f + random.nextFloat() * 0.35f)
@@ -429,11 +475,9 @@ fun SyntheticLiveView(
     val w = size.width
     val h = size.height
 
-    // Calculate exposure brightness shift
     val evFloat = exposureComp.replace("+", "").toFloatOrNull() ?: 0f
     val brightnessMultiplier = (1.0f + (evFloat * 0.15f)).coerceIn(0.4f, 1.8f)
 
-    // Base colors according to Creative Look
     val (cTop, cBottom) = when (creativeLook) {
       CreativeLook.BW -> Color(0xFF1E1E1E) to Color(0xFF9E9E9E)
       CreativeLook.SE -> Color(0xFF382918) to Color(0xFFC49A6C)
@@ -445,7 +489,6 @@ fun SyntheticLiveView(
       CreativeLook.ST -> Color(0xFF162338) to Color(0xFFE29B52)
     }
 
-    // Sky / Environment gradient
     val brush = androidx.compose.ui.graphics.Brush.verticalGradient(
       colors = listOf(
         cTop.copy(
@@ -462,14 +505,12 @@ fun SyntheticLiveView(
     )
     drawRect(brush = brush)
 
-    // Stylized silhouette architectural skyline & optics circle
     val silColor = Color.Black.copy(alpha = 0.55f)
     drawRect(silColor, Offset(w * 0.1f, h * 0.6f), Size(w * 0.15f, h * 0.4f))
     drawRect(silColor, Offset(w * 0.28f, h * 0.52f), Size(w * 0.2f, h * 0.48f))
     drawRect(silColor, Offset(w * 0.52f, h * 0.58f), Size(w * 0.18f, h * 0.42f))
     drawRect(silColor, Offset(w * 0.73f, h * 0.48f), Size(w * 0.22f, h * 0.52f))
 
-    // High ISO grain simulation if ISO > 1600
     val isoNum = iso.toIntOrNull() ?: 100
     if (isoNum >= 1600) {
       val grainCount = (isoNum / 80).coerceIn(30, 180)
