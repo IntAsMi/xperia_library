@@ -7,9 +7,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.DapPreferences
 import com.example.data.FolderRepository
 import com.example.model.AudioFileItem
+import com.example.model.ChannelMode
+import com.example.model.DapFontSize
 import com.example.model.DapPlayerState
 import com.example.model.DapThemeSetting
 import com.example.model.FolderItem
+import com.example.model.ScanningMode
+import com.example.model.SleepTimerOption
+import com.example.model.VisualizerChannelMode
 import com.example.player.DapAudioPlayer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +31,16 @@ data class DapUiState(
   val isLoading: Boolean = false,
   val isNowPlayingExpanded: Boolean = false,
   val isSettingsOpen: Boolean = false,
-  val folderHistory: List<Pair<String?, String>> = emptyList() // Pair(uri, displayPath)
+  val isAudioTuningDrawerOpen: Boolean = false,
+  val folderHistory: List<Pair<String?, String>> = emptyList(),
+  val isScanningLibrary: Boolean = false,
+  val scanProgress: Pair<Int, Int>? = null,
+  val isPortraitLocked: Boolean = false,
+  val fontSize: DapFontSize = DapFontSize.MEDIUM,
+  val scanningMode: ScanningMode = ScanningMode.AUTOMATIC,
+  val isHapticEnabled: Boolean = true,
+  val isPreBufferEnabled: Boolean = true,
+  val isMultiOutputEnabled: Boolean = false
 )
 
 class DapViewModel(application: Application) : AndroidViewModel(application) {
@@ -35,13 +49,26 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   private val repository = FolderRepository(context)
   val player = DapAudioPlayer(context)
 
-  private val _uiState = MutableStateFlow(DapUiState())
+  private val _uiState = MutableStateFlow(
+    DapUiState(
+      isPortraitLocked = prefs.isPortraitLocked(),
+      fontSize = prefs.getFontSize(),
+      scanningMode = prefs.getScanningMode(),
+      isHapticEnabled = prefs.isHapticEnabled(),
+      isPreBufferEnabled = prefs.isPreBufferEnabled(),
+      isMultiOutputEnabled = prefs.isMultiOutputEnabled()
+    )
+  )
   val uiState: StateFlow<DapUiState> = _uiState.asStateFlow()
 
   val playerState: StateFlow<DapPlayerState> = player.state
   val themeSetting: StateFlow<DapThemeSetting> = prefs.themeFlow
+  val lockPortraitFlow: StateFlow<Boolean> = prefs.lockPortraitFlow
+  val fontSizeFlow: StateFlow<DapFontSize> = prefs.fontSizeFlow
 
   init {
+    player.isHapticEnabled = prefs.isHapticEnabled()
+    player.isPreBufferEnabled = prefs.isPreBufferEnabled()
     loadInitialFolder()
   }
 
@@ -98,6 +125,10 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
         audioFiles = files,
         isLoading = false
       )
+
+      if (_uiState.value.scanningMode == ScanningMode.AUTOMATIC && uriString.startsWith("content://")) {
+        triggerLibraryScan(uriString)
+      }
     }
   }
 
@@ -126,7 +157,6 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   fun navigateUp() {
     val history = _uiState.value.folderHistory
     if (history.isEmpty()) {
-      // Return to root if not already there
       val root = _uiState.value.rootFolderUri
       if (_uiState.value.currentFolderUri != root) {
         prefs.setLastVisitedFolderUri(root)
@@ -185,6 +215,23 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  fun triggerLibraryScan(targetFolderUri: String? = _uiState.value.currentFolderUri) {
+    val uriStr = targetFolderUri ?: return
+    if (uriStr.startsWith("virtual_demo://")) return
+
+    viewModelScope.launch {
+      _uiState.value = _uiState.value.copy(isScanningLibrary = true, scanProgress = 0 to 1)
+      val enriched = repository.scanFolderDeep(uriStr) { current, total ->
+        _uiState.value = _uiState.value.copy(scanProgress = current to total)
+      }
+      _uiState.value = _uiState.value.copy(
+        audioFiles = enriched,
+        isScanningLibrary = false,
+        scanProgress = null
+      )
+    }
+  }
+
   fun playTrack(track: AudioFileItem) {
     player.playTrack(track, _uiState.value.audioFiles)
   }
@@ -197,12 +244,21 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   fun skipNext() = player.skipNext()
   fun skipPrevious() = player.skipPrevious()
   fun seekTo(positionMs: Long) = player.seekTo(positionMs)
+  fun fastForwardStep() = player.fastForwardStep()
+  fun fastRewindStep() = player.fastRewindStep()
   fun toggleRepeat() = player.toggleRepeatMode()
   fun toggleShuffle() = player.toggleShuffle()
   fun setSpeed(speed: Float) = player.setPlaybackSpeed(speed)
   fun setLoopPointA() = player.setLoopPointA()
   fun setLoopPointB() = player.setLoopPointB()
   fun clearLoopPoints() = player.clearLoopPoints()
+
+  // Audio Tuning Drawer Controls
+  fun toggleAudioPhase() = player.toggleAudioPhase()
+  fun setChannelMode(mode: ChannelMode) = player.setChannelMode(mode)
+  fun setVisualizerChannelMode(mode: VisualizerChannelMode) = player.setVisualizerChannelMode(mode)
+  fun selectOutputDevice(deviceId: Int) = player.selectOutputDevice(deviceId)
+  fun setSleepTimer(option: SleepTimerOption) = player.setSleepTimer(option)
 
   fun setNowPlayingExpanded(expanded: Boolean) {
     _uiState.value = _uiState.value.copy(isNowPlayingExpanded = expanded)
@@ -212,8 +268,45 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
     _uiState.value = _uiState.value.copy(isSettingsOpen = open)
   }
 
+  fun setAudioTuningDrawerOpen(open: Boolean) {
+    _uiState.value = _uiState.value.copy(isAudioTuningDrawerOpen = open)
+  }
+
   fun setTheme(theme: DapThemeSetting) {
     prefs.setTheme(theme)
+  }
+
+  fun setPortraitLocked(locked: Boolean) {
+    prefs.setPortraitLocked(locked)
+    _uiState.value = _uiState.value.copy(isPortraitLocked = locked)
+  }
+
+  fun setFontSize(size: DapFontSize) {
+    prefs.setFontSize(size)
+    _uiState.value = _uiState.value.copy(fontSize = size)
+  }
+
+  fun setScanningMode(mode: ScanningMode) {
+    prefs.setScanningMode(mode)
+    _uiState.value = _uiState.value.copy(scanningMode = mode)
+  }
+
+  fun setHapticEnabled(enabled: Boolean) {
+    prefs.setHapticEnabled(enabled)
+    player.isHapticEnabled = enabled
+    _uiState.value = _uiState.value.copy(isHapticEnabled = enabled)
+  }
+
+  fun setPreBufferEnabled(enabled: Boolean) {
+    prefs.setPreBufferEnabled(enabled)
+    player.isPreBufferEnabled = enabled
+    _uiState.value = _uiState.value.copy(isPreBufferEnabled = enabled)
+  }
+
+  fun setMultiOutputEnabled(enabled: Boolean) {
+    prefs.setMultiOutputEnabled(enabled)
+    player.outputManager.setSimultaneousSpeakerPlayback(enabled)
+    _uiState.value = _uiState.value.copy(isMultiOutputEnabled = enabled)
   }
 
   private fun extractFriendlyPath(uriStr: String): String {

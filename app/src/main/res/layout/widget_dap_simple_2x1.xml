@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_simple_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:gravity="center_vertical">
+
+    <ImageView
+        android:id="@+id/widget_simple_icon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@drawable/ic_widget_dap"
+        android:contentDescription="DAP Console" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="10dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_simple_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DAP Console"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/widget_simple_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="No Track Loaded"
+            android:textColor="#E0A938"
+            android:textSize="10sp"
+            android:fontFamily="monospace"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/widget_simple_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--:-- / --:--"
+            android:textColor="#A0A3B0"
+            android:textSize="10sp"
+            android:fontFamily="monospace" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_simple_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="IDLE"
+        android:textColor="#7A7E8C"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
+        android:layout_marginStart="4dp" />
+
+</LinearLayout>

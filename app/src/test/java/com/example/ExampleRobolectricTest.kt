@@ -1,12 +1,20 @@
 package com.example
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.example.model.AudioFileItem
+import com.example.model.ChannelMode
+import com.example.model.DapFontSize
+import com.example.model.DapPlayerState
 import com.example.model.DapThemeSetting
+import com.example.model.SleepTimerOption
+import com.example.model.VisualizerChannelMode
 import com.example.model.formatDuration
 import com.example.model.formatFileSize
+import com.example.player.AudioMetadataExtractor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,26 +58,73 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify audio file specs formatting`() {
-    val track = AudioFileItem(
-      id = "test_1",
-      uriString = "content://media/1",
-      title = "Symphony No. 5",
-      fileName = "01. Symphony.flac",
-      extension = ".flac",
-      filePath = "/Music/Beethoven/01. Symphony.flac",
-      durationMs = 240_000L,
-      sizeBytes = 45_000_000L,
-      sampleRate = 96000,
-      bitDepth = 24,
-      bitrateKbps = 2850,
-      channels = 2,
-      codec = "FLAC"
+  fun `verify disk and track number parsing from filename`() {
+    // Exact user format: '2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation'' ...'
+    val filename = "2.01 - Sonata F Moll - Sonata In F Minor, Op. 77.flac"
+    val item = AudioMetadataExtractor.fastEstimateItem(
+      uri = Uri.parse("file://test/$filename"),
+      fileName = filename,
+      fileSize = 75_000_000L,
+      rawPath = "/storage/SD_CARD/Music/$filename"
     )
-    assertEquals("04:00", track.formattedDuration)
-    assertTrue(track.formattedSpecs.contains("FLAC"))
-    assertTrue(track.formattedSpecs.contains("96.0 kHz") || track.formattedSpecs.contains("96 kHz"))
-    assertTrue(track.formattedSpecs.contains("24-bit"))
-    assertTrue(track.formattedSpecs.contains("2850 kbps"))
+
+    assertEquals(2, item.diskNumber)
+    assertEquals(1, item.trackNumber)
+    assertEquals("FLAC", item.codec)
+    assertTrue(item.title.contains("Sonata F Moll"))
+    assertEquals(50, item.waveform.size)
+  }
+
+  @Test
+  fun `verify multi-level timings state`() {
+    val track1 = AudioFileItem(
+      id = "1",
+      uriString = "uri1",
+      title = "Track 1.01",
+      fileName = "1.01.flac",
+      extension = ".flac",
+      filePath = "/path/1.01.flac",
+      durationMs = 200_000L,
+      sizeBytes = 40_000_000L,
+      diskNumber = 1,
+      trackNumber = 1
+    )
+    val track2 = AudioFileItem(
+      id = "2",
+      uriString = "uri2",
+      title = "Track 2.01",
+      fileName = "2.01.flac",
+      extension = ".flac",
+      filePath = "/path/2.01.flac",
+      durationMs = 300_000L,
+      sizeBytes = 60_000_000L,
+      diskNumber = 2,
+      trackNumber = 1
+    )
+
+    val state = DapPlayerState(
+      currentTrack = track2,
+      currentDiskNumber = 2,
+      positionMs = 50_000L,
+      durationMs = 300_000L,
+      diskTotalDurationMs = 300_000L,
+      diskRemainingDurationMs = 250_000L,
+      folderTotalDurationMs = 500_000L,
+      folderRemainingDurationMs = 250_000L
+    )
+
+    assertEquals("-04:10", state.formattedRemaining)
+    assertEquals("-04:10", state.formattedDiskRemaining)
+    assertEquals("05:00", state.formattedDiskTotal)
+    assertEquals("08:20", state.formattedFolderTotal)
+    assertEquals("-04:10", state.formattedFolderRemaining)
+  }
+
+  @Test
+  fun `verify audio tuning options`() {
+    assertEquals(4, ChannelMode.values().size)
+    assertEquals(3, VisualizerChannelMode.values().size)
+    assertEquals(4, DapFontSize.values().size)
+    assertEquals(7, SleepTimerOption.values().size)
   }
 }

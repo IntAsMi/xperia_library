@@ -18,11 +18,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.ScreenLockPortrait
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,13 +49,30 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.DapFontSize
 import com.example.model.DapThemeSetting
+import com.example.model.ScanningMode
+import com.example.model.SleepTimerOption
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DapSettingsSheet(
   currentTheme: DapThemeSetting,
   onThemeSelect: (DapThemeSetting) -> Unit,
+  isPortraitLocked: Boolean,
+  onTogglePortraitLocked: (Boolean) -> Unit,
+  fontSize: DapFontSize,
+  onFontSizeSelect: (DapFontSize) -> Unit,
+  sleepTimerRemaining: Int?,
+  onSleepTimerSelect: (SleepTimerOption) -> Unit,
+  isHapticEnabled: Boolean,
+  onToggleHaptic: (Boolean) -> Unit,
+  isPreBufferEnabled: Boolean,
+  onTogglePreBuffer: (Boolean) -> Unit,
+  isMultiOutputEnabled: Boolean,
+  onToggleMultiOutput: (Boolean) -> Unit,
+  scanningMode: ScanningMode,
+  onScanningModeSelect: (ScanningMode) -> Unit,
   onSelectRootFolder: () -> Unit,
   onDismiss: () -> Unit
 ) {
@@ -58,7 +82,7 @@ fun DapSettingsSheet(
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
-    containerColor = colors.surface,
+    containerColor = Color(0xFF10121A),
     contentColor = colors.onSurface,
     shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
   ) {
@@ -84,9 +108,9 @@ fun DapSettingsSheet(
             letterSpacing = 1.sp
           )
           Text(
-            text = "Audiophile folder playback & engine configuration",
+            text = "Audiophile engine, display, and playback preferences",
             color = colors.onSurfaceVariant,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontFamily = FontFamily.Monospace
           )
         }
@@ -95,14 +119,323 @@ fun DapSettingsSheet(
         }
       }
 
-      Spacer(modifier = Modifier.height(16.dp))
+      Spacer(modifier = Modifier.height(14.dp))
       HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
-      Spacer(modifier = Modifier.height(16.dp))
+      Spacer(modifier = Modifier.height(14.dp))
 
-      // Section 1: Themes
+      // Section: Portrait Lock & Orientation
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+          Icon(imageVector = Icons.Default.ScreenLockPortrait, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
+            Text(
+              text = "LOCK PORTRAIT MODE",
+              color = colors.onSurface,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = if (isPortraitLocked) "Locked in Portrait (ignores rotation)" else "Auto-rotate allowed (Landscape split view enabled)",
+              color = colors.onSurfaceVariant,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+        Switch(
+          checked = isPortraitLocked,
+          onCheckedChange = onTogglePortraitLocked,
+          colors = SwitchDefaults.colors(
+            checkedThumbColor = colors.onPrimary,
+            checkedTrackColor = colors.primary
+          )
+        )
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Font Size Selector
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
+        Icon(imageVector = Icons.Default.FormatSize, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+          text = "FONT SIZE / SCALE",
+          color = colors.onSurface,
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace
+        )
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        DapFontSize.values().forEach { size ->
+          val isSel = size == fontSize
+          Box(
+            modifier = Modifier
+              .weight(1f)
+              .clip(RoundedCornerShape(6.dp))
+              .background(if (isSel) colors.primary else colors.surfaceVariant.copy(alpha = 0.5f))
+              .border(1.dp, if (isSel) colors.primary else colors.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+              .clickable { onFontSizeSelect(size) }
+              .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Text(
+              text = when (size) {
+                DapFontSize.SMALL -> "SMALL"
+                DapFontSize.MEDIUM -> "STANDARD"
+                DapFontSize.LARGE -> "LARGE"
+                DapFontSize.EXTRA_LARGE -> "XL"
+              },
+              color = if (isSel) colors.onPrimary else colors.onSurface,
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Sleep Timer
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(imageVector = Icons.Default.Bedtime, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+          Text(
+            text = "SLEEP TIMER",
+            color = colors.onSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+          if (sleepTimerRemaining != null) {
+            Text(
+              text = "Active: ${sleepTimerRemaining / 60}m ${sleepTimerRemaining % 60}s remaining",
+              color = colors.primary,
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SleepTimerOption.values().forEach { option ->
+          val isSel = (option == SleepTimerOption.OFF && sleepTimerRemaining == null)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(6.dp))
+              .background(if (isSel) colors.primary.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.4f))
+              .clickable { onSleepTimerSelect(option) }
+              .padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = option.displayName,
+              color = if (isSel) colors.primary else colors.onSurface,
+              fontSize = 11.sp,
+              fontFamily = FontFamily.Monospace,
+              fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+            )
+            if (isSel) {
+              Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+            }
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Haptic Feedback & Button Clicks
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+          Icon(imageVector = Icons.Default.Vibration, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
+            Text(
+              text = "TACTILE HAPTIC FEEDBACK",
+              color = colors.onSurface,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = "Vibrate on button press (play, pause, next, rewind)",
+              color = colors.onSurfaceVariant,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+        Switch(
+          checked = isHapticEnabled,
+          onCheckedChange = onToggleHaptic,
+          colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary, checkedTrackColor = colors.primary)
+        )
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Large File Pre-buffering
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+          Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
+            Text(
+              text = "AUDIOPHILE RAM PRE-BUFFERING",
+              color = colors.onSurface,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = "Shows loading bar when loading large (>40MB) FLAC/DSD masters",
+              color = colors.onSurfaceVariant,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+        Switch(
+          checked = isPreBufferEnabled,
+          onCheckedChange = onTogglePreBuffer,
+          colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary, checkedTrackColor = colors.primary)
+        )
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Multiple Outputs
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+          Icon(imageVector = Icons.Default.SpeakerGroup, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
+            Text(
+              text = "PLAY THROUGH MULTIPLE OUTPUTS",
+              color = colors.onSurface,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = "Force speaker alongside connected headphones if supported",
+              color = colors.onSurfaceVariant,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+        Switch(
+          checked = isMultiOutputEnabled,
+          onCheckedChange = onToggleMultiOutput,
+          colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary, checkedTrackColor = colors.primary)
+        )
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Library Scanning Mode
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(imageVector = Icons.Default.Sync, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+          text = "LIBRARY SCANNING PROCESS",
+          color = colors.onSurface,
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace
+        )
+      }
+
+      Spacer(modifier = Modifier.height(6.dp))
+
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ScanningMode.values().forEach { mode ->
+          val isSel = mode == scanningMode
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(6.dp))
+              .background(if (isSel) colors.primary.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.4f))
+              .clickable { onScanningModeSelect(mode) }
+              .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column {
+              Text(
+                text = mode.displayName,
+                color = if (isSel) colors.primary else colors.onSurface,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = mode.description,
+                color = colors.onSurfaceVariant,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+              )
+            }
+            if (isSel) {
+              Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+            }
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Themes
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Text(
           text = "THEME SELECTION",
           color = colors.onSurface,
@@ -112,23 +445,18 @@ fun DapSettingsSheet(
         )
       }
 
-      Spacer(modifier = Modifier.height(10.dp))
+      Spacer(modifier = Modifier.height(8.dp))
 
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         DapThemeSetting.values().forEach { theme ->
           val isSelected = theme == currentTheme
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .clip(RoundedCornerShape(8.dp))
-              .background(if (isSelected) colors.primary.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.5f))
-              .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) colors.primary else colors.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(8.dp)
-              )
+              .clip(RoundedCornerShape(6.dp))
+              .background(if (isSelected) colors.primary.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.4f))
               .clickable { onThemeSelect(theme) }
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+              .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
@@ -136,65 +464,29 @@ fun DapSettingsSheet(
               Text(
                 text = theme.displayName,
                 color = if (isSelected) colors.primary else colors.onSurface,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
               )
               Text(
                 text = theme.description,
                 color = colors.onSurfaceVariant,
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace
               )
             }
-
             if (isSelected) {
-              Box(
-                modifier = Modifier
-                  .size(22.dp)
-                  .clip(CircleShape)
-                  .background(colors.primary),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Check,
-                  contentDescription = "Selected",
-                  tint = colors.onPrimary,
-                  modifier = Modifier.size(14.dp)
-                )
-              }
+              Icon(imageVector = Icons.Default.Check, contentDescription = "Selected", tint = colors.primary, modifier = Modifier.size(16.dp))
             }
           }
         }
       }
 
-      Spacer(modifier = Modifier.height(20.dp))
+      Spacer(modifier = Modifier.height(14.dp))
       HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
-      Spacer(modifier = Modifier.height(16.dp))
+      Spacer(modifier = Modifier.height(14.dp))
 
-      // Section 2: Music Root Folder Picker
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-          text = "SD CARD / STORAGE ROOT",
-          color = colors.onSurface,
-          fontSize = 12.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace
-        )
-      }
-
-      Spacer(modifier = Modifier.height(8.dp))
-      Text(
-        text = "Select your main music folder from your SD Card or device. DAP Console will always remember and directly open inside this folder every time the app launches.",
-        color = colors.onSurfaceVariant,
-        fontSize = 11.sp,
-        fontFamily = FontFamily.Monospace,
-        lineHeight = 15.sp
-      )
-
-      Spacer(modifier = Modifier.height(10.dp))
+      // Music Root Folder Picker
       Box(
         modifier = Modifier
           .fillMaxWidth()
@@ -211,48 +503,12 @@ fun DapSettingsSheet(
           Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(8.dp))
           Text(
-            text = "CHOOSE SD CARD MUSIC FOLDER",
+            text = "CHOOSE SD CARD MUSIC ROOT FOLDER",
             color = colors.onPrimary,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
           )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(20.dp))
-      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
-      Spacer(modifier = Modifier.height(16.dp))
-
-      // Section 3: Engine Architecture Specifications
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(imageVector = Icons.Default.Speed, contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-          text = "AUDIO ENGINE SPECIFICATIONS",
-          color = colors.onSurface,
-          fontSize = 12.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace
-        )
-      }
-
-      Spacer(modifier = Modifier.height(8.dp))
-
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(6.dp))
-          .background(colors.surfaceVariant.copy(alpha = 0.4f))
-          .border(1.dp, colors.outline.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-          .padding(10.dp)
-      ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(text = "• Decoder: Media3 ExoPlayer Engine (Low-latency)", color = colors.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-          Text(text = "• Gapless: Native buffer pre-caching (0 ms overlap)", color = colors.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-          Text(text = "• Formats: FLAC, WAV, ALAC, DSD/DSF, MP3, AAC, OGG, OPUS", color = colors.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-          Text(text = "• Timings: Dual remaining calculation (Track & Folder)", color = colors.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-          Text(text = "• Memory footprint: < 28 MB RAM (Lightning fast)", color = colors.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
       }
 

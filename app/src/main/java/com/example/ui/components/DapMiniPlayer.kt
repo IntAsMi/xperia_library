@@ -54,8 +54,8 @@ fun DapMiniPlayer(
     modifier = modifier
       .fillMaxWidth()
       .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-      .background(colors.surface)
-      .border(1.dp, colors.outline.copy(alpha = 0.5f), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+      .background(Color(0xFF000000)) // Strictly opaque black without transparency or blur
+      .border(1.dp, Color(0xFF2A2E3A), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
       .clickable { onClick() }
   ) {
     // Mini progress bar on top
@@ -65,17 +65,17 @@ fun DapMiniPlayer(
         .fillMaxWidth()
         .height(2.5.dp),
       color = colors.primary,
-      trackColor = colors.surfaceVariant
+      trackColor = Color(0xFF1E212B)
     )
 
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 12.dp, vertical = 7.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // Track Title, Codec, Timings
+      // Track Title, Codec, Multi-level Timings
       Column(modifier = Modifier.weight(1f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Box(
@@ -97,8 +97,8 @@ fun DapMiniPlayer(
 
           Text(
             text = track.title,
-            color = colors.onSurface,
-            fontSize = 13.sp,
+            color = Color.White,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -109,10 +109,12 @@ fun DapMiniPlayer(
         Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-          text = "${playerState.formattedElapsed} / ${playerState.formattedRemaining}  •  Folder: ${playerState.formattedFolderRemaining} left",
-          color = colors.onSurfaceVariant,
-          fontSize = 11.sp,
-          fontFamily = FontFamily.Monospace
+          text = "${playerState.formattedElapsed}/${playerState.formattedRemaining} • Disk ${playerState.currentDiskNumber}: ${playerState.formattedDiskRemaining} • Folder: ${playerState.formattedFolderRemaining}",
+          color = Color(0xFFA0A3B0),
+          fontSize = 10.sp,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
         )
       }
 
@@ -120,7 +122,7 @@ fun DapMiniPlayer(
       Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
           onClick = onTogglePlayPause,
-          modifier = Modifier.size(38.dp)
+          modifier = Modifier.size(36.dp)
         ) {
           Icon(
             imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -132,12 +134,12 @@ fun DapMiniPlayer(
 
         IconButton(
           onClick = onSkipNext,
-          modifier = Modifier.size(38.dp)
+          modifier = Modifier.size(36.dp)
         ) {
           Icon(
             imageVector = Icons.Default.SkipNext,
             contentDescription = "Next",
-            tint = colors.onSurface,
+            tint = Color.White,
             modifier = Modifier.size(22.dp)
           )
         }
