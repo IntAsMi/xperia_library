@@ -1,5 +1,7 @@
 package com.example.player
 
+import android.media.audiofx.Visualizer
+import android.util.Log
 import com.example.model.VisualizerChannelMode
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -12,18 +14,26 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 
 class AudioVisualizerEngine {
-  private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-    // Silently catch any coroutine error so visualizer never crashes the app process
-  }
+  private val exceptionHandler = CoroutineExceptionHandler { _, _ -> }
   private val scope = CoroutineScope(Dispatchers.Default + exceptionHandler)
   private var pollingJob: Job? = null
 
+  private var nativeVisualizer: Visualizer? = null
+  private val fftBytes = ByteArray(256)
+  private val waveformBytes = ByteArray(256)
+
   private val _spectrumBands = MutableStateFlow<List<Float>>(List(32) { 0f })
   val spectrumBands: StateFlow<List<Float>> = _spectrumBands.asStateFlow()
+
+  private val _spectrumBandsLeft = MutableStateFlow<List<Float>>(List(32) { 0f })
+  val spectrumBandsLeft: StateFlow<List<Float>> = _spectrumBandsLeft.asStateFlow()
+
+  private val _spectrumBandsRight = MutableStateFlow<List<Float>>(List(32) { 0f })
+  val spectrumBandsRight: StateFlow<List<Float>> = _spectrumBandsRight.asStateFlow()
 
   private val _peakLeft = MutableStateFlow(0f)
   val peakLeft: StateFlow<Float> = _peakLeft.asStateFlow()
@@ -38,14 +48,35 @@ class AudioVisualizerEngine {
   }
 
   fun attachToSession(audioSessionId: Int) {
-    // Pure software DSP calculation - completely bypasses buggy native AudioEffect / RECORD_AUDIO permissions
+    releaseNativeVisualizer()
+    if (audioSessionId <= 0) return
+
+    try {
+      val vis = Visualizer(audioSessionId).apply {
+        captureSize = Visualizer.getCaptureSizeRange()[0].coerceAtLeast(128).coerceAtMost(256)
+        enabled = true
+      }
+      nativeVisualizer = vis
+    } catch (e: Exception) {
+      Log.d("AudioVisualizerEngine", "Native visualizer initialization notice: ${e.message}")
+      nativeVisualizer = null
+    }
+  }
+
+  private fun releaseNativeVisualizer() {
+    try {
+      nativeVisualizer?.enabled = false
+      nativeVisualizer?.release()
+    } catch (_: Exception) {}
+    nativeVisualizer = null
   }
 
   fun start(
     isPlayingProvider: () -> Boolean,
     positionProvider: () -> Long,
     durationProvider: () -> Long,
-    waveformProvider: () -> List<Float> = { emptyList() }
+    waveformLeftProvider: () -> List<Float> = { emptyList() },
+    waveformRightProvider: () -> List<Float> = { emptyList() }
   ) {
     pollingJob?.cancel()
     pollingJob = scope.launch {
@@ -57,67 +88,119 @@ class AudioVisualizerEngine {
           // Smooth decay to zero when paused
           val cur = _spectrumBands.value
           if (cur.any { it > 0.01f }) {
-            _spectrumBands.value = cur.map { (it * 0.75f).coerceAtLeast(0f) }
-            _peakLeft.value = (_peakLeft.value * 0.75f).coerceAtLeast(0f)
-            _peakRight.value = (_peakRight.value * 0.75f).coerceAtLeast(0f)
+            _spectrumBands.value = cur.map { (it * 0.7f).coerceAtLeast(0f) }
+            _spectrumBandsLeft.value = _spectrumBandsLeft.value.map { (it * 0.7f).coerceAtLeast(0f) }
+            _spectrumBandsRight.value = _spectrumBandsRight.value.map { (it * 0.7f).coerceAtLeast(0f) }
+            _peakLeft.value = (_peakLeft.value * 0.7f).coerceAtLeast(0f)
+            _peakRight.value = (_peakRight.value * 0.7f).coerceAtLeast(0f)
           } else {
             _spectrumBands.value = List(32) { 0f }
+            _spectrumBandsLeft.value = List(32) { 0f }
+            _spectrumBandsRight.value = List(32) { 0f }
             _peakLeft.value = 0f
             _peakRight.value = 0f
           }
-          delay(80L)
+          delay(60L)
           continue
         }
 
-        // Live DSP reaction computed from actual track playback progress & waveform energy
         val posMs = positionProvider()
         val durMs = durationProvider().coerceAtLeast(1L)
         val progress = (posMs.toFloat() / durMs.toFloat()).coerceIn(0f, 1f)
 
-        val waveform = waveformProvider()
-        val baseAmp = if (waveform.isNotEmpty()) {
-          val idx = (progress * (waveform.size - 1)).toInt().coerceIn(0, waveform.size - 1)
-          waveform[idx].coerceIn(0.15f, 1.0f)
-        } else {
-          0.55f
+        // Read real decoded track waveform data for Left and Right channels
+        val wLeft = waveformLeftProvider()
+        val wRight = waveformRightProvider()
+
+        val rawAmpL = if (wLeft.isNotEmpty()) {
+          val idx = (progress * (wLeft.size - 1)).toInt().coerceIn(0, wLeft.size - 1)
+          wLeft[idx].coerceIn(0.12f, 1.0f)
+        } else 0.5f
+
+        val rawAmpR = if (wRight.isNotEmpty()) {
+          val idx = (progress * (wRight.size - 1)).toInt().coerceIn(0, wRight.size - 1)
+          wRight[idx].coerceIn(0.12f, 1.0f)
+        } else rawAmpL
+
+        phase += 0.25
+
+        // Read real FFT if native visualizer is connected and enabled
+        var realFftSuccess = false
+        val fftMagnitudes = FloatArray(32)
+        val vis = nativeVisualizer
+        if (vis != null) {
+          try {
+            val status = vis.getFft(fftBytes)
+            if (status == Visualizer.SUCCESS) {
+              val n = (fftBytes.size / 2).coerceAtMost(32)
+              for (i in 0 until n) {
+                val r = fftBytes[2 * i].toFloat()
+                val im = fftBytes[2 * i + 1].toFloat()
+                val mag = hypot(r, im) / 128f
+                fftMagnitudes[i] = mag.coerceIn(0.05f, 1.0f)
+              }
+              realFftSuccess = true
+            }
+          } catch (_: Exception) {}
         }
 
-        phase += 0.22
-        val t = posMs / 1000.0
-        val beat = (t * 2.2) % 1.0 // ~132 BPM pulse
-        val bassPulse = Math.pow((1.0 - beat).coerceIn(0.0, 1.0), 2.5).toFloat() * baseAmp
-
-        val bands = List(32) { idx ->
-          val freqRatio = idx / 32f
-          val waveMod = abs(sin(phase * (0.9 + idx * 0.11) + posMs * 0.002)).toFloat()
-          val bassBoost = if (idx < 8) bassPulse * 0.8f else (bassPulse * 0.2f)
-          val presence = (waveMod * 0.6f + bassBoost * 0.4f) * baseAmp
-          presence.coerceIn(0.06f, 0.98f)
+        // Generate 32 bands for Left and Right channels based on actual audio data
+        val bandsL = List(32) { idx ->
+          val base = if (realFftSuccess) {
+            fftMagnitudes[idx] * rawAmpL
+          } else {
+            val freqMod = abs(sin(phase * (0.8 + idx * 0.12) + posMs * 0.002)).toFloat()
+            (freqMod * 0.5f + 0.5f) * rawAmpL
+          }
+          base.coerceIn(0.05f, 1.0f)
         }
 
-        val lBase = (baseAmp * 0.6f + bassPulse * 0.4f * abs(sin(phase * 1.15))).toFloat().coerceIn(0.08f, 0.96f)
-        val rBase = (baseAmp * 0.58f + bassPulse * 0.42f * abs(cos(phase * 0.98))).toFloat().coerceIn(0.08f, 0.96f)
+        val bandsR = List(32) { idx ->
+          val base = if (realFftSuccess) {
+            fftMagnitudes[idx] * rawAmpR
+          } else {
+            val freqMod = abs(sin(phase * (0.85 + idx * 0.11) + posMs * 0.0022)).toFloat()
+            (freqMod * 0.5f + 0.5f) * rawAmpR
+          }
+          base.coerceIn(0.05f, 1.0f)
+        }
 
-        applyChannelModeAndEmit(bands, lBase, rBase)
-        delay(40L) // ~25 FPS ultra smooth live reaction
+        val combinedBands = List(32) { idx ->
+          ((bandsL[idx] + bandsR[idx]) / 2f).coerceIn(0.05f, 1.0f)
+        }
+
+        applyChannelModeAndEmit(bandsL, bandsR, combinedBands, rawAmpL, rawAmpR)
+        delay(35L) // ~30 FPS smooth real-time response
       }
     }
   }
 
-  private fun applyChannelModeAndEmit(bands: List<Float>, rawL: Float, rawR: Float) {
+  private fun applyChannelModeAndEmit(
+    bandsL: List<Float>,
+    bandsR: List<Float>,
+    combinedBands: List<Float>,
+    rawL: Float,
+    rawR: Float
+  ) {
     when (channelMode) {
       VisualizerChannelMode.STEREO -> {
-        _spectrumBands.value = bands
+        _spectrumBands.value = combinedBands
+        _spectrumBandsLeft.value = bandsL
+        _spectrumBandsRight.value = bandsR
         _peakLeft.value = rawL
         _peakRight.value = rawR
       }
       VisualizerChannelMode.LEFT_ONLY -> {
-        _spectrumBands.value = bands.mapIndexed { idx, v -> if (idx % 2 == 0) v else 0f }
+        _spectrumBands.value = bandsL
+        _spectrumBandsLeft.value = bandsL
+        _spectrumBandsRight.value = List(32) { 0f }
         _peakLeft.value = rawL
         _peakRight.value = 0f
       }
       VisualizerChannelMode.RIGHT_ONLY -> {
-        _spectrumBands.value = bands.mapIndexed { idx, v -> if (idx % 2 != 0) v else 0f }
+        _spectrumBands.value = bandsR
+        _spectrumBandsLeft.value = List(32) { 0f }
+        _spectrumBandsRight.value = bandsR
         _peakLeft.value = 0f
         _peakRight.value = rawR
       }
@@ -128,11 +211,14 @@ class AudioVisualizerEngine {
     pollingJob?.cancel()
     pollingJob = null
     _spectrumBands.value = List(32) { 0f }
+    _spectrumBandsLeft.value = List(32) { 0f }
+    _spectrumBandsRight.value = List(32) { 0f }
     _peakLeft.value = 0f
     _peakRight.value = 0f
   }
 
   fun release() {
     stop()
+    releaseNativeVisualizer()
   }
 }

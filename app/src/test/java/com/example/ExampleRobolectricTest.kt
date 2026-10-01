@@ -72,7 +72,9 @@ class ExampleRobolectricTest {
     assertEquals(1, item.trackNumber)
     assertEquals("FLAC", item.codec)
     assertTrue(item.title.contains("Sonata F Moll"))
-    assertEquals(50, item.waveform.size)
+    assertEquals(60, item.waveform.size)
+    assertEquals(60, item.waveformLeft.size)
+    assertEquals(60, item.waveformRight.size)
   }
 
   @Test

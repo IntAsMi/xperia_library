@@ -14,11 +14,16 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes as Media3AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.RawResourceDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import com.example.MainActivity
 import com.example.R
@@ -41,6 +46,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+@OptIn(UnstableApi::class)
 class DapAudioPlayer(private val context: Context) {
   private val scope = CoroutineScope(Dispatchers.Main)
   private var player: ExoPlayer? = null
@@ -49,6 +55,7 @@ class DapAudioPlayer(private val context: Context) {
   private var sleepTimerJob: Job? = null
   private var bufferJob: Job? = null
 
+  val dspAudioProcessor = AudiophileDspAudioProcessor()
   val visualizerEngine = AudioVisualizerEngine()
   val outputManager = AudioOutputManager(context)
   private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
@@ -109,6 +116,16 @@ class DapAudioPlayer(private val context: Context) {
       }
     }
     scope.launch {
+      visualizerEngine.spectrumBandsLeft.collect { lBands ->
+        _state.value = _state.value.copy(spectrumBandsLeft = lBands)
+      }
+    }
+    scope.launch {
+      visualizerEngine.spectrumBandsRight.collect { rBands ->
+        _state.value = _state.value.copy(spectrumBandsRight = rBands)
+      }
+    }
+    scope.launch {
       visualizerEngine.peakLeft.collect { l ->
         _state.value = _state.value.copy(peakMeterLeft = l)
       }
@@ -120,9 +137,20 @@ class DapAudioPlayer(private val context: Context) {
     }
   }
 
-  @OptIn(UnstableApi::class)
   private fun initPlayer() {
-    val exo = ExoPlayer.Builder(context)
+    val renderersFactory = object : DefaultRenderersFactory(context) {
+      override fun buildAudioSink(
+        context: Context,
+        enableFloatOutput: Boolean,
+        enableAudioTrackPlaybackParams: Boolean
+      ): AudioSink? {
+        return DefaultAudioSink.Builder(context)
+          .setAudioProcessors(arrayOf(dspAudioProcessor))
+          .build()
+      }
+    }
+
+    val exo = ExoPlayer.Builder(context, renderersFactory)
       .setAudioAttributes(
         Media3AudioAttributes.Builder()
           .setUsage(C.USAGE_MEDIA)
@@ -131,11 +159,13 @@ class DapAudioPlayer(private val context: Context) {
         true
       )
       .setHandleAudioBecomingNoisy(true)
+      .setSeekBackIncrementMs(10000L)
+      .setSeekForwardIncrementMs(10000L)
       .build()
 
     exo.repeatMode = Player.REPEAT_MODE_ALL
 
-    // Setup MediaSession for system media controls
+    // Setup MediaSession for system media controls (the Android Quick Settings media player card)
     val activityIntent = Intent(context, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
@@ -148,11 +178,21 @@ class DapAudioPlayer(private val context: Context) {
       mediaSession = MediaSession.Builder(context, exo)
         .setSessionActivity(sessionActivity)
         .build()
+
+      DapPlaybackService.activeSession = mediaSession
+
+      // Safely start the MediaSessionService
+      val serviceIntent = Intent(context, DapPlaybackService::class.java)
+      context.startService(serviceIntent)
     } catch (e: Exception) {
       Log.w("DapAudioPlayer", "MediaSession setup error: ${e.message}")
     }
 
     exo.addListener(object : Player.Listener {
+      override fun onAudioSessionIdChanged(audioSessionId: Int) {
+        visualizerEngine.attachToSession(audioSessionId)
+      }
+
       override fun onPlaybackStateChanged(playbackState: Int) {
         val isPlaying = exo.isPlaying
         _state.value = _state.value.copy(
@@ -164,24 +204,18 @@ class DapAudioPlayer(private val context: Context) {
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         _state.value = _state.value.copy(isPlaying = isPlaying)
-        val track = _state.value.currentTrack
         if (isPlaying) {
           startPositionPolling()
           visualizerEngine.start(
             isPlayingProvider = { player?.isPlaying == true },
             positionProvider = { player?.currentPosition ?: 0L },
             durationProvider = { player?.duration ?: 0L },
-            waveformProvider = { _state.value.currentTrack?.waveform ?: emptyList() }
+            waveformLeftProvider = { _state.value.currentTrack?.waveformLeft ?: emptyList() },
+            waveformRightProvider = { _state.value.currentTrack?.waveformRight ?: emptyList() }
           )
-          if (track != null) {
-            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, true)
-          }
         } else {
           stopPositionPolling()
           visualizerEngine.stop()
-          if (track != null) {
-            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, false)
-          }
         }
         DapWidgetUpdater.updateAll(context, _state.value)
       }
@@ -204,9 +238,6 @@ class DapAudioPlayer(private val context: Context) {
             durationMs = track.durationMs
           )
           DapWidgetUpdater.updateAll(context, _state.value)
-          if (exo.isPlaying) {
-            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, true)
-          }
 
           // Sleep timer check: End of Track
           if (currentSleepOption == SleepTimerOption.END_OF_TRACK && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -230,14 +261,14 @@ class DapAudioPlayer(private val context: Context) {
 
     performTactileFeedback()
 
-    // Audiophile Pre-buffering indication for large lossless files (> 40MB)
+    // Pre-buffering indication for large lossless files
     if (isPreBufferEnabled && current.sizeBytes > 40_000_000L) {
       _state.value = _state.value.copy(isBufferingLargeFile = true, bufferProgress = 0.2f)
       bufferJob?.cancel()
       bufferJob = scope.launch {
-        delay(60L)
-        _state.value = _state.value.copy(bufferProgress = 0.65f)
         delay(50L)
+        _state.value = _state.value.copy(bufferProgress = 0.7f)
+        delay(40L)
         _state.value = _state.value.copy(bufferProgress = 1.0f, isBufferingLargeFile = false)
       }
     } else {
@@ -247,14 +278,23 @@ class DapAudioPlayer(private val context: Context) {
     try {
       exo.clearMediaItems()
       val mediaItems = activePlaylist.map { track ->
-        val uri = if (track.uriString.contains("demo_synth")) {
-          Uri.parse("android.resource://${context.packageName}/${R.raw.demo_synth}")
+        val uri = if (track.uriString.contains("demo_synth") || track.uriString.contains("raw/demo_synth")) {
+          RawResourceDataSource.buildRawResourceUri(R.raw.demo_synth)
         } else {
           Uri.parse(track.uriString)
         }
+
+        // Set rich technical metadata so Android Quick Settings Media Player card displays file name and file specs
+        val metadata = MediaMetadata.Builder()
+          .setTitle(track.fileName)
+          .setArtist("${track.codec} • ${track.sampleRate / 1000}kHz/${track.bitDepth}bit • ${track.bitrateKbps}kbps")
+          .setDisplayTitle(track.fileName)
+          .build()
+
         MediaItem.Builder()
           .setUri(uri)
           .setMediaId(track.id)
+          .setMediaMetadata(metadata)
           .build()
       }
 
@@ -273,7 +313,6 @@ class DapAudioPlayer(private val context: Context) {
         isPlaying = true
       )
 
-      DapPlaybackService.updatePlaybackState(context, current.title, current.fileName, true)
       DapWidgetUpdater.updateAll(context, _state.value)
     } catch (e: Exception) {
       Log.e("DapAudioPlayer", "Error starting playback: ${e.message}", e)
@@ -331,14 +370,14 @@ class DapAudioPlayer(private val context: Context) {
     DapWidgetUpdater.updateAll(context, _state.value)
   }
 
-  fun fastForwardStep(stepMs: Long = 5000L) {
+  fun fastForwardStep(stepMs: Long = 10000L) {
     val pos = (player?.currentPosition ?: 0L) + stepMs
     val dur = player?.duration ?: 0L
     seekTo(pos.coerceAtMost(dur))
     performTactileFeedback()
   }
 
-  fun fastRewindStep(stepMs: Long = 5000L) {
+  fun fastRewindStep(stepMs: Long = 10000L) {
     val pos = (player?.currentPosition ?: 0L) - stepMs
     seekTo(pos.coerceAtLeast(0L))
     performTactileFeedback()
@@ -388,22 +427,32 @@ class DapAudioPlayer(private val context: Context) {
     _state.value = _state.value.copy(loopPointA = null, loopPointB = null)
   }
 
+  /**
+   * Toggles audio phase between 0° (normal) and 180° (inverted).
+   * This is actively processed in real-time by AudiophileDspAudioProcessor on the actual audio output!
+   */
   fun toggleAudioPhase() {
     performTactileFeedback()
     val newPhase = !_state.value.audioPhaseInverted
+    dspAudioProcessor.isPhaseInverted = newPhase
     _state.value = _state.value.copy(audioPhaseInverted = newPhase)
   }
 
+  /**
+   * Switches channel mode between STEREO, LEFT_ONLY, RIGHT_ONLY, and MONO.
+   * This is actively processed in real-time by AudiophileDspAudioProcessor on the actual audio output!
+   */
   fun setChannelMode(mode: ChannelMode) {
     performTactileFeedback()
+    dspAudioProcessor.channelMode = mode
     _state.value = _state.value.copy(channelMode = mode)
-    val exo = player ?: return
-    when (mode) {
-      ChannelMode.STEREO -> exo.volume = 1.0f
-      ChannelMode.LEFT_ONLY -> exo.volume = 1.0f
-      ChannelMode.RIGHT_ONLY -> exo.volume = 1.0f
-      ChannelMode.MONO -> exo.volume = 1.0f
-    }
+    visualizerEngine.setChannelMode(
+      when (mode) {
+        ChannelMode.LEFT_ONLY -> VisualizerChannelMode.LEFT_ONLY
+        ChannelMode.RIGHT_ONLY -> VisualizerChannelMode.RIGHT_ONLY
+        else -> VisualizerChannelMode.STEREO
+      }
+    )
   }
 
   fun setVisualizerChannelMode(mode: VisualizerChannelMode) {
@@ -530,13 +579,16 @@ class DapAudioPlayer(private val context: Context) {
     sleepTimerJob?.cancel()
     bufferJob?.cancel()
     visualizerEngine.release()
-    DapPlaybackService.stopService(context)
+    try {
+      context.stopService(Intent(context, DapPlaybackService::class.java))
+    } catch (_: Exception) {}
     try {
       context.unregisterReceiver(widgetReceiver)
     } catch (_: Exception) {}
     try {
       mediaSession?.release()
       mediaSession = null
+      DapPlaybackService.activeSession = null
     } catch (_: Exception) {}
     player?.release()
     player = null

@@ -99,7 +99,8 @@ object AudioMetadataExtractor {
       240_000L
     }
 
-    val waveform = generateSyntheticWaveform(fileName, 50)
+    val (waveL, waveR) = generateStereoWaveform(fileName, 60)
+    val waveform = waveL.zip(waveR) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
 
     return AudioFileItem(
       id = uri.toString(),
@@ -117,6 +118,8 @@ object AudioMetadataExtractor {
       codec = codec,
       trackNumber = trackNum,
       diskNumber = diskNum,
+      waveformLeft = waveL,
+      waveformRight = waveR,
       waveform = waveform
     )
   }
@@ -271,7 +274,8 @@ object AudioMetadataExtractor {
       durationMs = seconds * 1000L
     }
 
-    val waveform = generateSyntheticWaveform(fileName, 50)
+    val (waveL, waveR) = generateStereoWaveform(fileName, 60)
+    val waveform = waveL.zip(waveR) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
 
     return AudioFileItem(
       id = uri.toString(),
@@ -289,8 +293,30 @@ object AudioMetadataExtractor {
       codec = codec,
       trackNumber = trackNum,
       diskNumber = diskNum,
+      waveformLeft = waveL,
+      waveformRight = waveR,
       waveform = waveform
     )
+  }
+
+  fun generateStereoWaveform(seedKey: String, barsCount: Int = 60): Pair<List<Float>, List<Float>> {
+    val seed = seedKey.hashCode().toLong()
+    val rnd = Random(seed)
+    val left = mutableListOf<Float>()
+    val right = mutableListOf<Float>()
+    var prevL = 0.45f
+    var prevR = 0.42f
+    for (i in 0 until barsCount) {
+      val pos = i.toFloat() / barsCount.toFloat()
+      val envelope = Math.sin(pos * Math.PI).toFloat().coerceIn(0.2f, 1.0f)
+      val deltaL = (rnd.nextFloat() - 0.5f) * 0.35f
+      val deltaR = (rnd.nextFloat() - 0.5f) * 0.35f
+      prevL = (prevL + deltaL).coerceIn(0.15f, 0.95f)
+      prevR = (prevR + deltaR).coerceIn(0.15f, 0.95f)
+      left.add((prevL * envelope).coerceIn(0.12f, 1.0f))
+      right.add((prevR * envelope).coerceIn(0.12f, 1.0f))
+    }
+    return left to right
   }
 
   fun generateSyntheticWaveform(seedKey: String, barsCount: Int = 50): List<Float> {

@@ -22,6 +22,8 @@ data class CachedTrackEntity(
   val trackNumber: Int,
   val diskNumber: Int,
   val waveformCsv: String,
+  val waveformLeftCsv: String = "",
+  val waveformRightCsv: String = "",
   val lastScanned: Long = System.currentTimeMillis()
 ) {
   fun toAudioFileItem(): AudioFileItem {
@@ -29,6 +31,18 @@ data class CachedTrackEntity(
       emptyList()
     } else {
       waveformCsv.split(",").mapNotNull { it.toFloatOrNull() }
+    }
+
+    val leftPoints = if (waveformLeftCsv.isBlank()) {
+      waveformPoints
+    } else {
+      waveformLeftCsv.split(",").mapNotNull { it.toFloatOrNull() }
+    }
+
+    val rightPoints = if (waveformRightCsv.isBlank()) {
+      waveformPoints
+    } else {
+      waveformRightCsv.split(",").mapNotNull { it.toFloatOrNull() }
     }
 
     return AudioFileItem(
@@ -47,6 +61,8 @@ data class CachedTrackEntity(
       codec = codec,
       trackNumber = trackNumber,
       diskNumber = diskNumber,
+      waveformLeft = leftPoints,
+      waveformRight = rightPoints,
       waveform = waveformPoints
     )
   }
@@ -54,6 +70,8 @@ data class CachedTrackEntity(
   companion object {
     fun fromAudioFileItem(item: AudioFileItem, parentFolderUri: String): CachedTrackEntity {
       val waveformCsv = item.waveform.joinToString(",") { String.format(java.util.Locale.US, "%.2f", it) }
+      val leftCsv = item.waveformLeft.joinToString(",") { String.format(java.util.Locale.US, "%.2f", it) }
+      val rightCsv = item.waveformRight.joinToString(",") { String.format(java.util.Locale.US, "%.2f", it) }
       return CachedTrackEntity(
         uriString = item.uriString,
         parentFolderUri = parentFolderUri,
@@ -70,7 +88,9 @@ data class CachedTrackEntity(
         codec = item.codec,
         trackNumber = item.trackNumber,
         diskNumber = item.diskNumber,
-        waveformCsv = waveformCsv
+        waveformCsv = waveformCsv,
+        waveformLeftCsv = leftCsv,
+        waveformRightCsv = rightCsv
       )
     }
   }

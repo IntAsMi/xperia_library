@@ -145,6 +145,8 @@ fun DapMainScreen(
           onSetLoopB = { viewModel.setLoopPointB() },
           onClearLoop = { viewModel.clearLoopPoints() },
           onOpenAudioTuning = { viewModel.setAudioTuningDrawerOpen(true) },
+          onTogglePhase = { viewModel.toggleAudioPhase() },
+          onSetChannelMode = { mode -> viewModel.setChannelMode(mode) },
           modifier = Modifier.fillMaxSize()
         )
       }

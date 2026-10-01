@@ -94,6 +94,8 @@ data class AudioFileItem(
   val codec: String = "FLAC",
   val trackNumber: Int = 0,
   val diskNumber: Int = 1,
+  val waveformLeft: List<Float> = emptyList(),
+  val waveformRight: List<Float> = emptyList(),
   val waveform: List<Float> = emptyList()
 ) {
   val formattedDuration: String get() = formatDuration(durationMs)
@@ -132,6 +134,8 @@ data class DapPlayerState(
   val peakMeterLeft: Float = 0f,
   val peakMeterRight: Float = 0f,
   val spectrumBands: List<Float> = List(32) { 0f },
+  val spectrumBandsLeft: List<Float> = List(32) { 0f },
+  val spectrumBandsRight: List<Float> = List(32) { 0f },
   val loopPointA: Long? = null,
   val loopPointB: Long? = null,
   val audioPhaseInverted: Boolean = false,

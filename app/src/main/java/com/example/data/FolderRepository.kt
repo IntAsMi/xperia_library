@@ -221,392 +221,92 @@ class FolderRepository(private val context: Context) {
     )
   }
 
+  private fun createDemoTrack(
+    id: String,
+    title: String,
+    fileName: String,
+    filePath: String,
+    durationMs: Long,
+    sizeBytes: Long,
+    sampleRate: Int = 96000,
+    bitDepth: Int = 24,
+    bitrateKbps: Int = 2850,
+    channels: Int = 2,
+    codec: String = "FLAC",
+    trackNumber: Int = 1,
+    diskNumber: Int = 1,
+    seedKey: String
+  ): AudioFileItem {
+    val (left, right) = AudioMetadataExtractor.generateStereoWaveform(seedKey, 60)
+    val combined = left.zip(right) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
+    return AudioFileItem(
+      id = id,
+      uriString = "android.resource://${context.packageName}/raw/demo_synth",
+      title = title,
+      fileName = fileName,
+      extension = if (fileName.contains(".")) ".${fileName.substringAfterLast('.')}" else ".${codec.lowercase()}",
+      filePath = filePath,
+      durationMs = durationMs,
+      sizeBytes = sizeBytes,
+      sampleRate = sampleRate,
+      bitDepth = bitDepth,
+      bitrateKbps = bitrateKbps,
+      channels = channels,
+      codec = codec,
+      trackNumber = trackNumber,
+      diskNumber = diskNumber,
+      waveformLeft = left,
+      waveformRight = right,
+      waveform = combined
+    )
+  }
+
   private fun getVirtualDemoContents(virtualUri: String): Pair<List<FolderItem>, List<AudioFileItem>> {
     when {
       virtualUri.contains("Beethoven_Sonatas_BoxSet") -> {
         // Multi-disk box set matching user example: Ex. '2.01 - Sonata F Moll - Sonata In F Minor, Op. 77...'
         val tracks = listOf(
-          AudioFileItem(
-            id = "demo_sonata_1_01",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.01 - Sonata C-Dur - Sonata In C Major, Op. 53 ''Waldstein'' I. Allegro",
-            fileName = "1.01 - Sonata C-Dur - Sonata In C Major, Op. 53.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.01 - Sonata C-Dur.flac",
-            durationMs = 435_000L,
-            sizeBytes = 85_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2850,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 1,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_1_01", 50)
-          ),
-          AudioFileItem(
-            id = "demo_sonata_1_02",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.02 - Sonata C-Dur - Sonata In C Major, Op. 53 II. Introduzione",
-            fileName = "1.02 - Sonata C-Dur - Introduzione.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.02 - Introduzione.flac",
-            durationMs = 390_000L,
-            sizeBytes = 76_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2780,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 2,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_1_02", 50)
-          ),
-          AudioFileItem(
-            id = "demo_sonata_1_03",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.03 - Sonata C-Dur - Sonata In C Major, Op. 53 III. Rondo",
-            fileName = "1.03 - Sonata C-Dur - Rondo.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.03 - Rondo.flac",
-            durationMs = 490_000L,
-            sizeBytes = 94_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2920,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 3,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_1_03", 50)
-          ),
+          createDemoTrack("demo_sonata_1_01", "1.01 - Sonata C-Dur - Sonata In C Major, Op. 53 ''Waldstein'' I. Allegro", "1.01 - Sonata C-Dur - Sonata In C Major, Op. 53.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.01 - Sonata C-Dur.flac", 435_000L, 85_000_000L, 96000, 24, 2850, 2, "FLAC", 1, 1, "sonata_1_01"),
+          createDemoTrack("demo_sonata_1_02", "1.02 - Sonata C-Dur - Sonata In C Major, Op. 53 II. Introduzione", "1.02 - Sonata C-Dur - Introduzione.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.02 - Introduzione.flac", 390_000L, 76_000_000L, 96000, 24, 2780, 2, "FLAC", 2, 1, "sonata_1_02"),
+          createDemoTrack("demo_sonata_1_03", "1.03 - Sonata C-Dur - Sonata In C Major, Op. 53 III. Rondo", "1.03 - Sonata C-Dur - Rondo.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/1.03 - Rondo.flac", 490_000L, 94_000_000L, 96000, 24, 2920, 2, "FLAC", 3, 1, "sonata_1_03"),
           // DISK 2:
-          AudioFileItem(
-            id = "demo_sonata_2_01",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation'' I. Andante",
-            fileName = "2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation''.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation''.flac",
-            durationMs = 340_000L,
-            sizeBytes = 68_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2910,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 1,
-            diskNumber = 2,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_2_01", 50)
-          ),
-          AudioFileItem(
-            id = "demo_sonata_2_02",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "2.02 - Sonata F Moll - Sonata In F Minor, Op. 77 II. Scherzo",
-            fileName = "2.02 - Sonata F Moll - Scherzo.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.02 - Scherzo.flac",
-            durationMs = 440_000L,
-            sizeBytes = 89_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2900,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 2,
-            diskNumber = 2,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_2_02", 50)
-          ),
-          AudioFileItem(
-            id = "demo_sonata_2_03",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "2.03 - Sonata F Moll - Sonata In F Minor, Op. 77 III. Finale",
-            fileName = "2.03 - Sonata F Moll - Finale.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.03 - Finale.flac",
-            durationMs = 545_000L,
-            sizeBytes = 110_000_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2950,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 3,
-            diskNumber = 2,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("sonata_2_03", 50)
-          )
+          createDemoTrack("demo_sonata_2_01", "2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation'' I. Andante", "2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation''.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.01 - Sonata F Moll - Sonata In F Minor, Op. 77 ''L-Invocation''.flac", 340_000L, 68_000_000L, 96000, 24, 2910, 2, "FLAC", 1, 2, "sonata_2_01"),
+          createDemoTrack("demo_sonata_2_02", "2.02 - Sonata F Moll - Sonata In F Minor, Op. 77 II. Scherzo", "2.02 - Sonata F Moll - Scherzo.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.02 - Scherzo.flac", 440_000L, 89_000_000L, 96000, 24, 2900, 2, "FLAC", 2, 2, "sonata_2_02"),
+          createDemoTrack("demo_sonata_2_03", "2.03 - Sonata F Moll - Sonata In F Minor, Op. 77 III. Finale", "2.03 - Sonata F Moll - Finale.flac", "/storage/SD_CARD/Music/Beethoven_Sonatas_BoxSet/2.03 - Finale.flac", 545_000L, 110_000_000L, 96000, 24, 2950, 2, "FLAC", 3, 2, "sonata_2_03")
         )
         return emptyList<FolderItem>() to tracks
       }
       virtualUri.contains("24bit_96kHz_FLAC") -> {
         val tracks = listOf(
-          AudioFileItem(
-            id = "demo_flac_1",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.01 - Analog Dreamscape (96kHz Remaster)",
-            fileName = "1.01 - Analog Dreamscape.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.01 - Analog Dreamscape.flac",
-            durationMs = 258_000L,
-            sizeBytes = 58_420_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2950,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 1,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("flac_1", 50)
-          ),
-          AudioFileItem(
-            id = "demo_flac_2",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.02 - Velvet Skyline (Acoustic Resonance)",
-            fileName = "1.02 - Velvet Skyline.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.02 - Velvet Skyline.flac",
-            durationMs = 225_000L,
-            sizeBytes = 51_180_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2820,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 2,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("flac_2", 50)
-          ),
-          AudioFileItem(
-            id = "demo_flac_3",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.03 - Midnight Frequency (Analog Tape)",
-            fileName = "1.03 - Midnight Frequency.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.03 - Midnight Frequency.flac",
-            durationMs = 312_000L,
-            sizeBytes = 69_840_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 3110,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 3,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("flac_3", 50)
-          ),
-          AudioFileItem(
-            id = "demo_flac_4",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "1.04 - Sub-bass Reflections (Direct Cut)",
-            fileName = "1.04 - Sub-bass Reflections.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.04 - Sub-bass Reflections.flac",
-            durationMs = 290_000L,
-            sizeBytes = 64_200_000L,
-            sampleRate = 96000,
-            bitDepth = 24,
-            bitrateKbps = 2980,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 4,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("flac_4", 50)
-          )
+          createDemoTrack("demo_flac_1", "1.01 - Analog Dreamscape (96kHz Remaster)", "1.01 - Analog Dreamscape.flac", "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.01 - Analog Dreamscape.flac", 258_000L, 58_420_000L, 96000, 24, 2950, 2, "FLAC", 1, 1, "flac_1"),
+          createDemoTrack("demo_flac_2", "1.02 - Velvet Skyline (Acoustic Resonance)", "1.02 - Velvet Skyline.flac", "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.02 - Velvet Skyline.flac", 225_000L, 51_180_000L, 96000, 24, 2820, 2, "FLAC", 2, 1, "flac_2"),
+          createDemoTrack("demo_flac_3", "1.03 - Midnight Frequency (Analog Tape)", "1.03 - Midnight Frequency.flac", "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.03 - Midnight Frequency.flac", 312_000L, 69_840_000L, 96000, 24, 3110, 2, "FLAC", 3, 1, "flac_3"),
+          createDemoTrack("demo_flac_4", "1.04 - Sub-bass Reflections (Direct Cut)", "1.04 - Sub-bass Reflections.flac", "/storage/SD_CARD/Music/24bit_96kHz_FLAC/1.04 - Sub-bass Reflections.flac", 290_000L, 64_200_000L, 96000, 24, 2980, 2, "FLAC", 4, 1, "flac_4")
         )
         return emptyList<FolderItem>() to tracks
       }
       virtualUri.contains("DSD_Acoustic_Sessions") -> {
         val tracks = listOf(
-          AudioFileItem(
-            id = "demo_dsd_1",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "01 - Prelude in G Minor (1-bit Direct Stream)",
-            fileName = "01 - Prelude in G Minor.dsf",
-            extension = ".dsf",
-            filePath = "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/01 - Prelude in G Minor.dsf",
-            durationMs = 330_000L,
-            sizeBytes = 112_000_000L,
-            sampleRate = 192000,
-            bitDepth = 1,
-            bitrateKbps = 5644,
-            channels = 2,
-            codec = "DSD128",
-            trackNumber = 1,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("dsd_1", 50)
-          ),
-          AudioFileItem(
-            id = "demo_dsd_2",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "02 - Cellos in Autumn (Room Mic Pair)",
-            fileName = "02 - Cellos in Autumn.dsf",
-            extension = ".dsf",
-            filePath = "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/02 - Cellos in Autumn.dsf",
-            durationMs = 255_000L,
-            sizeBytes = 89_000_000L,
-            sampleRate = 192000,
-            bitDepth = 1,
-            bitrateKbps = 5644,
-            channels = 2,
-            codec = "DSD128",
-            trackNumber = 2,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("dsd_2", 50)
-          ),
-          AudioFileItem(
-            id = "demo_dsd_3",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "03 - Acoustic Reverie (Uncompressed)",
-            fileName = "03 - Acoustic Reverie.dsf",
-            extension = ".dsf",
-            filePath = "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/03 - Acoustic Reverie.dsf",
-            durationMs = 365_000L,
-            sizeBytes = 124_000_000L,
-            sampleRate = 192000,
-            bitDepth = 1,
-            bitrateKbps = 5644,
-            channels = 2,
-            codec = "DSD128",
-            trackNumber = 3,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("dsd_3", 50)
-          )
+          createDemoTrack("demo_dsd_1", "01 - Prelude in G Minor (1-bit Direct Stream)", "01 - Prelude in G Minor.dsf", "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/01 - Prelude in G Minor.dsf", 330_000L, 112_000_000L, 192000, 1, 5644, 2, "DSD128", 1, 1, "dsd_1"),
+          createDemoTrack("demo_dsd_2", "02 - Cellos in Autumn (Room Mic Pair)", "02 - Cellos in Autumn.dsf", "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/02 - Cellos in Autumn.dsf", 255_000L, 89_000_000L, 192000, 1, 5644, 2, "DSD128", 2, 1, "dsd_2"),
+          createDemoTrack("demo_dsd_3", "03 - Acoustic Reverie (Uncompressed)", "03 - Acoustic Reverie.dsf", "/storage/SD_CARD/Music/DSD_Acoustic_Sessions/03 - Acoustic Reverie.dsf", 365_000L, 124_000_000L, 192000, 1, 5644, 2, "DSD128", 3, 1, "dsd_3")
         )
         return emptyList<FolderItem>() to tracks
       }
       virtualUri.contains("Lossless_Electronic_IDM") -> {
         val tracks = listOf(
-          AudioFileItem(
-            id = "demo_wav_1",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "01 - Modular Sequence A",
-            fileName = "01 - Modular Sequence A.wav",
-            extension = ".wav",
-            filePath = "/storage/SD_CARD/Music/Lossless_Electronic_IDM/01 - Modular Sequence A.wav",
-            durationMs = 370_000L,
-            sizeBytes = 65_000_000L,
-            sampleRate = 48000,
-            bitDepth = 24,
-            bitrateKbps = 2304,
-            channels = 2,
-            codec = "WAV",
-            trackNumber = 1,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("wav_1", 50)
-          ),
-          AudioFileItem(
-            id = "demo_wav_2",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "02 - Squarewave Glitch 04",
-            fileName = "02 - Squarewave Glitch 04.wav",
-            extension = ".wav",
-            filePath = "/storage/SD_CARD/Music/Lossless_Electronic_IDM/02 - Squarewave Glitch 04.wav",
-            durationMs = 280_000L,
-            sizeBytes = 49_000_000L,
-            sampleRate = 48000,
-            bitDepth = 24,
-            bitrateKbps = 2304,
-            channels = 2,
-            codec = "WAV",
-            trackNumber = 2,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("wav_2", 50)
-          ),
-          AudioFileItem(
-            id = "demo_wav_3",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "03 - Tape Loop Echo Chamber",
-            fileName = "03 - Tape Loop Echo Chamber.wav",
-            extension = ".wav",
-            filePath = "/storage/SD_CARD/Music/Lossless_Electronic_IDM/03 - Tape Loop Echo Chamber.wav",
-            durationMs = 325_000L,
-            sizeBytes = 57_000_000L,
-            sampleRate = 48000,
-            bitDepth = 24,
-            bitrateKbps = 2304,
-            channels = 2,
-            codec = "WAV",
-            trackNumber = 3,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("wav_3", 50)
-          ),
-          AudioFileItem(
-            id = "demo_wav_4",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "04 - Outro Pulse 120BPM",
-            fileName = "04 - Outro Pulse 120BPM.wav",
-            extension = ".wav",
-            filePath = "/storage/SD_CARD/Music/Lossless_Electronic_IDM/04 - Outro Pulse 120BPM.wav",
-            durationMs = 235_000L,
-            sizeBytes = 41_000_000L,
-            sampleRate = 48000,
-            bitDepth = 24,
-            bitrateKbps = 2304,
-            channels = 2,
-            codec = "WAV",
-            trackNumber = 4,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("wav_4", 50)
-          )
+          createDemoTrack("demo_wav_1", "01 - Modular Sequence A", "01 - Modular Sequence A.wav", "/storage/SD_CARD/Music/Lossless_Electronic_IDM/01 - Modular Sequence A.wav", 370_000L, 65_000_000L, 48000, 24, 2304, 2, "WAV", 1, 1, "wav_1"),
+          createDemoTrack("demo_wav_2", "02 - Squarewave Glitch 04", "02 - Squarewave Glitch 04.wav", "/storage/SD_CARD/Music/Lossless_Electronic_IDM/02 - Squarewave Glitch 04.wav", 280_000L, 49_000_000L, 48000, 24, 2304, 2, "WAV", 2, 1, "wav_2"),
+          createDemoTrack("demo_wav_3", "03 - Tape Loop Echo Chamber", "03 - Tape Loop Echo Chamber.wav", "/storage/SD_CARD/Music/Lossless_Electronic_IDM/03 - Tape Loop Echo Chamber.wav", 325_000L, 57_000_000L, 48000, 24, 2304, 2, "WAV", 3, 1, "wav_3"),
+          createDemoTrack("demo_wav_4", "04 - Outro Pulse 120BPM", "04 - Outro Pulse 120BPM.wav", "/storage/SD_CARD/Music/Lossless_Electronic_IDM/04 - Outro Pulse 120BPM.wav", 235_000L, 41_000_000L, 48000, 24, 2304, 2, "WAV", 4, 1, "wav_4")
         )
         return emptyList<FolderItem>() to tracks
       }
       virtualUri.contains("Vintage_Jazz_Trio") -> {
         val tracks = listOf(
-          AudioFileItem(
-            id = "demo_jazz_1",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "01 - Blue Monologue (Mono 1959)",
-            fileName = "01 - Blue Monologue.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Vintage_Jazz_Trio/01 - Blue Monologue.flac",
-            durationMs = 315_000L,
-            sizeBytes = 28_000_000L,
-            sampleRate = 44100,
-            bitDepth = 16,
-            bitrateKbps = 710,
-            channels = 1,
-            codec = "FLAC",
-            trackNumber = 1,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("jazz_1", 50)
-          ),
-          AudioFileItem(
-            id = "demo_jazz_2",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "02 - Midnight Brushes & Upright",
-            fileName = "02 - Midnight Brushes & Upright.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Vintage_Jazz_Trio/02 - Midnight Brushes & Upright.flac",
-            durationMs = 440_000L,
-            sizeBytes = 46_000_000L,
-            sampleRate = 44100,
-            bitDepth = 16,
-            bitrateKbps = 840,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 2,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("jazz_2", 50)
-          ),
-          AudioFileItem(
-            id = "demo_jazz_3",
-            uriString = "android.resource://${context.packageName}/raw/demo_synth",
-            title = "03 - Autumn in Manhattan",
-            fileName = "03 - Autumn in Manhattan.flac",
-            extension = ".flac",
-            filePath = "/storage/SD_CARD/Music/Vintage_Jazz_Trio/03 - Autumn in Manhattan.flac",
-            durationMs = 285_000L,
-            sizeBytes = 31_000_000L,
-            sampleRate = 44100,
-            bitDepth = 16,
-            bitrateKbps = 870,
-            channels = 2,
-            codec = "FLAC",
-            trackNumber = 3,
-            diskNumber = 1,
-            waveform = AudioMetadataExtractor.generateSyntheticWaveform("jazz_3", 50)
-          )
+          createDemoTrack("demo_jazz_1", "01 - Blue Monologue (Mono 1959)", "01 - Blue Monologue.flac", "/storage/SD_CARD/Music/Vintage_Jazz_Trio/01 - Blue Monologue.flac", 315_000L, 28_000_000L, 44100, 16, 710, 1, "FLAC", 1, 1, "jazz_1"),
+          createDemoTrack("demo_jazz_2", "02 - Midnight Brushes & Upright", "02 - Midnight Brushes & Upright.flac", "/storage/SD_CARD/Music/Vintage_Jazz_Trio/02 - Midnight Brushes & Upright.flac", 440_000L, 46_000_000L, 44100, 16, 840, 2, "FLAC", 2, 1, "jazz_2"),
+          createDemoTrack("demo_jazz_3", "03 - Autumn in Manhattan", "03 - Autumn in Manhattan.flac", "/storage/SD_CARD/Music/Vintage_Jazz_Trio/03 - Autumn in Manhattan.flac", 285_000L, 31_000_000L, 44100, 16, 870, 2, "FLAC", 3, 1, "jazz_3")
         )
         return emptyList<FolderItem>() to tracks
       }

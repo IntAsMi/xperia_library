@@ -84,6 +84,8 @@ fun DapNowPlaying(
   onSetLoopB: () -> Unit,
   onClearLoop: () -> Unit,
   onOpenAudioTuning: () -> Unit,
+  onTogglePhase: () -> Unit = {},
+  onSetChannelMode: (com.example.model.ChannelMode) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   BackHandler(onBack = onClose)
@@ -224,14 +226,23 @@ fun DapNowPlaying(
         ) {
           TrackInfoBanner(track = track)
           OutputSpecBanner(spec = playerState.audioOutputSpec, onClick = onOpenAudioTuning)
+          QuickAudioTuningStrip(
+            channelMode = playerState.channelMode,
+            isPhaseInverted = playerState.audioPhaseInverted,
+            onSetChannelMode = onSetChannelMode,
+            onTogglePhase = onTogglePhase,
+            onOpenAudioTuning = onOpenAudioTuning
+          )
           ReactiveSpectrumVisualizer(
             bands = playerState.spectrumBands,
-            channelMode = playerState.visualizerChannelMode
+            bandsLeft = playerState.spectrumBandsLeft,
+            bandsRight = playerState.spectrumBandsRight,
+            channelMode = playerState.channelMode
           )
           StereoVuMeter(
             left = playerState.peakMeterLeft,
             right = playerState.peakMeterRight,
-            channelMode = playerState.visualizerChannelMode
+            channelMode = playerState.channelMode
           )
           TechnicalSpecsGrid(track = track)
         }
@@ -247,6 +258,9 @@ fun DapNowPlaying(
           // Song Waveform in Progress Line
           DapWaveformScrubber(
             waveformPoints = track.waveform,
+            waveformLeft = track.waveformLeft,
+            waveformRight = track.waveformRight,
+            channelMode = playerState.channelMode,
             positionMs = playerState.positionMs,
             durationMs = playerState.durationMs,
             onSeekTo = onSeekTo
@@ -287,22 +301,35 @@ fun DapNowPlaying(
 
         OutputSpecBanner(spec = playerState.audioOutputSpec, onClick = onOpenAudioTuning)
 
-        // Real Reactive 32-Band Spectrum Visualizer
+        QuickAudioTuningStrip(
+          channelMode = playerState.channelMode,
+          isPhaseInverted = playerState.audioPhaseInverted,
+          onSetChannelMode = onSetChannelMode,
+          onTogglePhase = onTogglePhase,
+          onOpenAudioTuning = onOpenAudioTuning
+        )
+
+        // Real Reactive 32-Band Stereo Spectrum Visualizer
         ReactiveSpectrumVisualizer(
           bands = playerState.spectrumBands,
-          channelMode = playerState.visualizerChannelMode
+          bandsLeft = playerState.spectrumBandsLeft,
+          bandsRight = playerState.spectrumBandsRight,
+          channelMode = playerState.channelMode
         )
 
         // Real Stereo Peak dB VU Meter
         StereoVuMeter(
           left = playerState.peakMeterLeft,
           right = playerState.peakMeterRight,
-          channelMode = playerState.visualizerChannelMode
+          channelMode = playerState.channelMode
         )
 
-        // Song Waveform Progress Scrubber
+        // Song Waveform Progress Scrubber with distinct Left & Right channels
         DapWaveformScrubber(
           waveformPoints = track.waveform,
+          waveformLeft = track.waveformLeft,
+          waveformRight = track.waveformRight,
+          channelMode = playerState.channelMode,
           positionMs = playerState.positionMs,
           durationMs = playerState.durationMs,
           onSeekTo = onSeekTo
@@ -453,15 +480,106 @@ fun OutputSpecBanner(spec: com.example.model.AudioOutputSpec, onClick: () -> Uni
 }
 
 @Composable
-fun ReactiveSpectrumVisualizer(
-  bands: List<Float>,
-  channelMode: VisualizerChannelMode
+fun QuickAudioTuningStrip(
+  channelMode: com.example.model.ChannelMode,
+  isPhaseInverted: Boolean,
+  onSetChannelMode: (com.example.model.ChannelMode) -> Unit,
+  onTogglePhase: () -> Unit,
+  onOpenAudioTuning: () -> Unit
 ) {
   val colors = MaterialTheme.colorScheme
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    // Channel Mode Quick Toggle
+    val nextMode = when (channelMode) {
+      com.example.model.ChannelMode.STEREO -> com.example.model.ChannelMode.LEFT_ONLY
+      com.example.model.ChannelMode.LEFT_ONLY -> com.example.model.ChannelMode.RIGHT_ONLY
+      com.example.model.ChannelMode.RIGHT_ONLY -> com.example.model.ChannelMode.MONO
+      com.example.model.ChannelMode.MONO -> com.example.model.ChannelMode.STEREO
+    }
+
+    Box(
+      modifier = Modifier
+        .weight(1.3f)
+        .clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFF141822))
+        .border(1.dp, if (channelMode != com.example.model.ChannelMode.STEREO) colors.primary else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+        .clickable { onSetChannelMode(nextMode) }
+        .padding(horizontal = 8.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Text(
+        text = "CH: ${channelMode.displayName.uppercase()}",
+        color = if (channelMode != com.example.model.ChannelMode.STEREO) colors.primary else colors.onSurface,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1
+      )
+    }
+
+    // Phase Inversion Quick Toggle
+    Box(
+      modifier = Modifier
+        .weight(1.3f)
+        .clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFF141822))
+        .border(1.dp, if (isPhaseInverted) Color(0xFFFF5252) else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+        .clickable { onTogglePhase() }
+        .padding(horizontal = 8.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Text(
+        text = if (isPhaseInverted) "PHASE: 180° (INV)" else "PHASE: 0° (NORM)",
+        color = if (isPhaseInverted) Color(0xFFFF5252) else colors.onSurface,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1
+      )
+    }
+
+    // Tuning Drawer Button
+    Box(
+      modifier = Modifier
+        .weight(0.9f)
+        .clip(RoundedCornerShape(6.dp))
+        .background(colors.surfaceVariant.copy(alpha = 0.5f))
+        .border(1.dp, colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+        .clickable { onOpenAudioTuning() }
+        .padding(horizontal = 6.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Text(
+        text = "TUNING ⚙",
+        color = colors.primary,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1
+      )
+    }
+  }
+}
+
+@Composable
+fun ReactiveSpectrumVisualizer(
+  bands: List<Float>,
+  bandsLeft: List<Float> = emptyList(),
+  bandsRight: List<Float> = emptyList(),
+  channelMode: com.example.model.ChannelMode = com.example.model.ChannelMode.STEREO
+) {
+  val colors = MaterialTheme.colorScheme
+  val leftColor = Color(0xFF00E5FF) // Cyan
+  val rightColor = Color(0xFFFFB300) // Gold
+
   Box(
     modifier = Modifier
       .fillMaxWidth()
-      .height(60.dp)
+      .height(68.dp)
       .clip(RoundedCornerShape(6.dp))
       .background(Color(0xFF08090C))
       .border(1.dp, colors.outline.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
@@ -470,14 +588,18 @@ fun ReactiveSpectrumVisualizer(
     Column {
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Text(text = "DSP SPECTRUM ANALYZER", color = Color(0xFFA0A3B0), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(text = "DSP SPECTRUM [L: CYAN / R: GOLD]", color = Color(0xFFA0A3B0), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+        }
         Text(
           text = when (channelMode) {
-            VisualizerChannelMode.STEREO -> "L+R ACTIVE"
-            VisualizerChannelMode.LEFT_ONLY -> "L ONLY"
-            VisualizerChannelMode.RIGHT_ONLY -> "R ONLY"
+            com.example.model.ChannelMode.STEREO -> "STEREO L+R"
+            com.example.model.ChannelMode.LEFT_ONLY -> "SOLO LEFT"
+            com.example.model.ChannelMode.RIGHT_ONLY -> "SOLO RIGHT"
+            com.example.model.ChannelMode.MONO -> "SUMMED MONO"
           },
           color = colors.primary,
           fontSize = 8.sp,
@@ -488,27 +610,52 @@ fun ReactiveSpectrumVisualizer(
 
       Spacer(modifier = Modifier.height(2.dp))
 
-      Canvas(modifier = Modifier.fillMaxWidth().height(42.dp)) {
+      Canvas(modifier = Modifier.fillMaxWidth().height(48.dp)) {
         val w = size.width
         val h = size.height
-        val count = bands.size.coerceAtLeast(1)
+        val halfW = (w - 8.dp.toPx()) / 2f
+        val bLeft = if (bandsLeft.isNotEmpty()) bandsLeft else bands
+        val bRight = if (bandsRight.isNotEmpty()) bandsRight else bands
+        val count = 16 // 16 bands for Left, 16 bands for Right
         val spacing = 1.5.dp.toPx()
-        val barW = ((w - spacing * (count - 1)) / count).coerceAtLeast(2f)
+        val barW = ((halfW - spacing * (count - 1)) / count).coerceAtLeast(1.5f)
 
+        // LEFT CHANNEL SPECTRUM (Left Half)
         for (i in 0 until count) {
-          val amp = bands[i].coerceIn(0.04f, 1.0f)
+          val raw = if (channelMode == com.example.model.ChannelMode.RIGHT_ONLY) 0f else bLeft.getOrElse(i) { 0f }
+          val amp = raw.coerceIn(0.04f, 1.0f)
           val barH = h * amp
           val x = i * (barW + spacing)
           val y = h - barH
 
-          val barColor = when {
-            amp > 0.85f -> Color(0xFFFF5252)
-            amp > 0.6f -> Color(0xFFFFD740)
-            else -> Color(0xFFE0A938)
-          }
+          drawRoundRect(
+            color = if (channelMode == com.example.model.ChannelMode.RIGHT_ONLY) Color(0xFF1E222D) else leftColor,
+            topLeft = Offset(x, y),
+            size = Size(barW, barH),
+            cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+          )
+        }
+
+        // Center division line
+        val divX = halfW + 4.dp.toPx()
+        drawLine(
+          color = Color(0xFF282D3C),
+          start = Offset(divX, 0f),
+          end = Offset(divX, h),
+          strokeWidth = 1.dp.toPx()
+        )
+
+        // RIGHT CHANNEL SPECTRUM (Right Half)
+        val startR = divX + 4.dp.toPx()
+        for (i in 0 until count) {
+          val raw = if (channelMode == com.example.model.ChannelMode.LEFT_ONLY) 0f else bRight.getOrElse(i) { 0f }
+          val amp = raw.coerceIn(0.04f, 1.0f)
+          val barH = h * amp
+          val x = startR + i * (barW + spacing)
+          val y = h - barH
 
           drawRoundRect(
-            color = barColor,
+            color = if (channelMode == com.example.model.ChannelMode.LEFT_ONLY) Color(0xFF1E222D) else rightColor,
             topLeft = Offset(x, y),
             size = Size(barW, barH),
             cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
@@ -523,7 +670,7 @@ fun ReactiveSpectrumVisualizer(
 fun StereoVuMeter(
   left: Float,
   right: Float,
-  channelMode: VisualizerChannelMode
+  channelMode: com.example.model.ChannelMode = com.example.model.ChannelMode.STEREO
 ) {
   val colors = MaterialTheme.colorScheme
   Box(
@@ -546,10 +693,10 @@ fun StereoVuMeter(
       Spacer(modifier = Modifier.height(3.dp))
 
       // Left Channel
-      VuMeterBar(channel = "L", level = if (channelMode == VisualizerChannelMode.RIGHT_ONLY) 0f else left)
+      VuMeterBar(channel = "L", level = if (channelMode == com.example.model.ChannelMode.RIGHT_ONLY) 0f else left)
       Spacer(modifier = Modifier.height(3.dp))
       // Right Channel
-      VuMeterBar(channel = "R", level = if (channelMode == VisualizerChannelMode.LEFT_ONLY) 0f else right)
+      VuMeterBar(channel = "R", level = if (channelMode == com.example.model.ChannelMode.LEFT_ONLY) 0f else right)
     }
   }
 }
