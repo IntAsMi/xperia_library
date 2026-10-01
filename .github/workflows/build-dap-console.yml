@@ -1,4 +1,5 @@
 name: Build DAP Console APK
+# retrigger after enabling repository Actions permissions
 
 on:
   push:
