@@ -5,21 +5,23 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes as Media3AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.example.MainActivity
+import com.example.R
 import com.example.model.AudioFileItem
 import com.example.model.ChannelMode
 import com.example.model.DapPlayerState
@@ -81,11 +83,13 @@ class DapAudioPlayer(private val context: Context) {
       addAction(ACTION_WIDGET_NEXT)
       addAction(ACTION_WIDGET_PREV)
     }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      context.registerReceiver(widgetReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-    } else {
-      context.registerReceiver(widgetReceiver, filter)
-    }
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.registerReceiver(widgetReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      } else {
+        context.registerReceiver(widgetReceiver, filter)
+      }
+    } catch (_: Exception) {}
   }
 
   private fun observeOutputAndVisualizer() {
@@ -131,7 +135,7 @@ class DapAudioPlayer(private val context: Context) {
 
     exo.repeatMode = Player.REPEAT_MODE_ALL
 
-    // Connect to Media3 MediaSession for system media notification & background playback
+    // Setup MediaSession for system media controls
     val activityIntent = Intent(context, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
@@ -144,10 +148,8 @@ class DapAudioPlayer(private val context: Context) {
       mediaSession = MediaSession.Builder(context, exo)
         .setSessionActivity(sessionActivity)
         .build()
-      DapPlaybackService.activeMediaSession = mediaSession
-      DapPlaybackService.startService(context)
     } catch (e: Exception) {
-      e.printStackTrace()
+      Log.w("DapAudioPlayer", "MediaSession setup error: ${e.message}")
     }
 
     exo.addListener(object : Player.Listener {
@@ -162,19 +164,31 @@ class DapAudioPlayer(private val context: Context) {
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         _state.value = _state.value.copy(isPlaying = isPlaying)
+        val track = _state.value.currentTrack
         if (isPlaying) {
           startPositionPolling()
-          visualizerEngine.attachToSession(exo.audioSessionId)
           visualizerEngine.start(
             isPlayingProvider = { player?.isPlaying == true },
             positionProvider = { player?.currentPosition ?: 0L },
-            durationProvider = { player?.duration ?: 0L }
+            durationProvider = { player?.duration ?: 0L },
+            waveformProvider = { _state.value.currentTrack?.waveform ?: emptyList() }
           )
+          if (track != null) {
+            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, true)
+          }
         } else {
           stopPositionPolling()
           visualizerEngine.stop()
+          if (track != null) {
+            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, false)
+          }
         }
         DapWidgetUpdater.updateAll(context, _state.value)
+      }
+
+      override fun onPlayerError(error: PlaybackException) {
+        Log.e("DapAudioPlayer", "ExoPlayer playback error: ${error.message}", error)
+        _state.value = _state.value.copy(isPlaying = false)
       }
 
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -189,8 +203,10 @@ class DapAudioPlayer(private val context: Context) {
             positionMs = 0L,
             durationMs = track.durationMs
           )
-          visualizerEngine.attachToSession(exo.audioSessionId)
           DapWidgetUpdater.updateAll(context, _state.value)
+          if (exo.isPlaying) {
+            DapPlaybackService.updatePlaybackState(context, track.title, track.fileName, true)
+          }
 
           // Sleep timer check: End of Track
           if (currentSleepOption == SleepTimerOption.END_OF_TRACK && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -219,39 +235,49 @@ class DapAudioPlayer(private val context: Context) {
       _state.value = _state.value.copy(isBufferingLargeFile = true, bufferProgress = 0.2f)
       bufferJob?.cancel()
       bufferJob = scope.launch {
-        delay(80L)
+        delay(60L)
         _state.value = _state.value.copy(bufferProgress = 0.65f)
-        delay(70L)
+        delay(50L)
         _state.value = _state.value.copy(bufferProgress = 1.0f, isBufferingLargeFile = false)
       }
     } else {
       _state.value = _state.value.copy(isBufferingLargeFile = false, bufferProgress = 1.0f)
     }
 
-    exo.clearMediaItems()
-    val mediaItems = activePlaylist.map { track ->
-      MediaItem.Builder()
-        .setUri(Uri.parse(track.uriString))
-        .setMediaId(track.id)
-        .build()
+    try {
+      exo.clearMediaItems()
+      val mediaItems = activePlaylist.map { track ->
+        val uri = if (track.uriString.contains("demo_synth")) {
+          Uri.parse("android.resource://${context.packageName}/${R.raw.demo_synth}")
+        } else {
+          Uri.parse(track.uriString)
+        }
+        MediaItem.Builder()
+          .setUri(uri)
+          .setMediaId(track.id)
+          .build()
+      }
+
+      exo.setMediaItems(mediaItems, startIdx, 0L)
+      exo.prepare()
+      exo.play()
+
+      updateTimings(startIdx, 0L)
+
+      _state.value = _state.value.copy(
+        currentTrack = current,
+        currentFolderTracks = activePlaylist,
+        currentTrackIndex = startIdx,
+        currentDiskNumber = current.diskNumber,
+        isShuffle = shuffle,
+        isPlaying = true
+      )
+
+      DapPlaybackService.updatePlaybackState(context, current.title, current.fileName, true)
+      DapWidgetUpdater.updateAll(context, _state.value)
+    } catch (e: Exception) {
+      Log.e("DapAudioPlayer", "Error starting playback: ${e.message}", e)
     }
-
-    exo.setMediaItems(mediaItems, startIdx, 0L)
-    exo.prepare()
-    exo.play()
-
-    updateTimings(startIdx, 0L)
-
-    _state.value = _state.value.copy(
-      currentTrack = current,
-      currentFolderTracks = activePlaylist,
-      currentTrackIndex = startIdx,
-      currentDiskNumber = current.diskNumber,
-      isShuffle = shuffle,
-      isPlaying = true
-    )
-
-    DapWidgetUpdater.updateAll(context, _state.value)
   }
 
   fun playTrack(track: AudioFileItem, folderTracks: List<AudioFileItem>) {
@@ -320,7 +346,7 @@ class DapAudioPlayer(private val context: Context) {
 
   fun toggleRepeatMode() {
     performTactileFeedback()
-    val next = (_state.value.repeatMode + 1) % 3 // 0 = off, 1 = folder, 2 = track
+    val next = (_state.value.repeatMode + 1) % 3
     _state.value = _state.value.copy(repeatMode = next)
     player?.repeatMode = when (next) {
       1 -> Player.REPEAT_MODE_ALL
@@ -362,21 +388,19 @@ class DapAudioPlayer(private val context: Context) {
     _state.value = _state.value.copy(loopPointA = null, loopPointB = null)
   }
 
-  // Audio Phase Toggle (Normal 0° / Inverted 180°)
   fun toggleAudioPhase() {
     performTactileFeedback()
     val newPhase = !_state.value.audioPhaseInverted
     _state.value = _state.value.copy(audioPhaseInverted = newPhase)
   }
 
-  // Channel balance and routing (Stereo, Left Only, Right Only, Mono)
   fun setChannelMode(mode: ChannelMode) {
     performTactileFeedback()
     _state.value = _state.value.copy(channelMode = mode)
     val exo = player ?: return
     when (mode) {
       ChannelMode.STEREO -> exo.volume = 1.0f
-      ChannelMode.LEFT_ONLY -> exo.volume = 1.0f // Left channel isolated in UI & visualizer
+      ChannelMode.LEFT_ONLY -> exo.volume = 1.0f
       ChannelMode.RIGHT_ONLY -> exo.volume = 1.0f
       ChannelMode.MONO -> exo.volume = 1.0f
     }
@@ -466,19 +490,12 @@ class DapAudioPlayer(private val context: Context) {
     pollingJob = null
   }
 
-  /**
-   * Computes exact hierarchical timings:
-   * 1. Track Elapsed & Remaining
-   * 2. Current Disk Total & Disk Remaining (grouped by diskNumber)
-   * 3. Current Folder Total & Folder Remaining
-   */
   private fun updateTimings(currentIndex: Int, currentTrackPos: Long) {
     if (activePlaylist.isEmpty() || currentIndex !in activePlaylist.indices) return
 
     val currentTrack = activePlaylist[currentIndex]
     val currentTrackRemaining = (currentTrack.durationMs - currentTrackPos).coerceAtLeast(0L)
 
-    // Folder timings
     val folderTotal = activePlaylist.sumOf { it.durationMs }
     var folderSubsequent = 0L
     for (i in (currentIndex + 1) until activePlaylist.size) {
@@ -486,12 +503,10 @@ class DapAudioPlayer(private val context: Context) {
     }
     val folderRemaining = currentTrackRemaining + folderSubsequent
 
-    // Disk timings based on disk number and track ordering
     val currentDisk = currentTrack.diskNumber
     val diskTracks = activePlaylist.filter { it.diskNumber == currentDisk }
     val diskTotal = diskTracks.sumOf { it.durationMs }
 
-    // Remaining on this disk:
     var diskSubsequent = 0L
     for (i in (currentIndex + 1) until activePlaylist.size) {
       val t = activePlaylist[i]
@@ -515,13 +530,13 @@ class DapAudioPlayer(private val context: Context) {
     sleepTimerJob?.cancel()
     bufferJob?.cancel()
     visualizerEngine.release()
+    DapPlaybackService.stopService(context)
     try {
       context.unregisterReceiver(widgetReceiver)
     } catch (_: Exception) {}
     try {
       mediaSession?.release()
       mediaSession = null
-      DapPlaybackService.activeMediaSession = null
     } catch (_: Exception) {}
     player?.release()
     player = null

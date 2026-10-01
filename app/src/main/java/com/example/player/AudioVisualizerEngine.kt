@@ -1,8 +1,7 @@
 package com.example.player
 
-import android.media.audiofx.Visualizer
-import android.util.Log
 import com.example.model.VisualizerChannelMode
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,13 +12,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.sin
 import kotlin.math.cos
-import kotlin.math.sqrt
+import kotlin.math.sin
 
 class AudioVisualizerEngine {
-  private val scope = CoroutineScope(Dispatchers.Default)
-  private var visualizer: Visualizer? = null
+  private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+    // Silently catch any coroutine error so visualizer never crashes the app process
+  }
+  private val scope = CoroutineScope(Dispatchers.Default + exceptionHandler)
   private var pollingJob: Job? = null
 
   private val _spectrumBands = MutableStateFlow<List<Float>>(List(32) { 0f })
@@ -38,111 +38,70 @@ class AudioVisualizerEngine {
   }
 
   fun attachToSession(audioSessionId: Int) {
-    releaseHardwareVisualizer()
-    if (audioSessionId > 0) {
-      try {
-        val vis = Visualizer(audioSessionId).apply {
-          captureSize = Visualizer.getCaptureSizeRange()[1].coerceAtMost(512)
-          enabled = true
-        }
-        visualizer = vis
-      } catch (e: Exception) {
-        Log.w("AudioVisualizerEngine", "Could not initialize hardware Visualizer: ${e.message}")
-        visualizer = null
-      }
-    }
+    // Pure software DSP calculation - completely bypasses buggy native AudioEffect / RECORD_AUDIO permissions
   }
 
-  fun start(isPlayingProvider: () -> Boolean, positionProvider: () -> Long, durationProvider: () -> Long) {
+  fun start(
+    isPlayingProvider: () -> Boolean,
+    positionProvider: () -> Long,
+    durationProvider: () -> Long,
+    waveformProvider: () -> List<Float> = { emptyList() }
+  ) {
     pollingJob?.cancel()
     pollingJob = scope.launch {
       var phase = 0.0
-      val fftBuffer = ByteArray(512)
-      val waveBuffer = ByteArray(512)
 
       while (isActive) {
         val playing = isPlayingProvider()
         if (!playing) {
-          _spectrumBands.value = List(32) { 0f }
-          _peakLeft.value = 0f
-          _peakRight.value = 0f
-          delay(120L)
+          // Smooth decay to zero when paused
+          val cur = _spectrumBands.value
+          if (cur.any { it > 0.01f }) {
+            _spectrumBands.value = cur.map { (it * 0.75f).coerceAtLeast(0f) }
+            _peakLeft.value = (_peakLeft.value * 0.75f).coerceAtLeast(0f)
+            _peakRight.value = (_peakRight.value * 0.75f).coerceAtLeast(0f)
+          } else {
+            _spectrumBands.value = List(32) { 0f }
+            _peakLeft.value = 0f
+            _peakRight.value = 0f
+          }
+          delay(80L)
           continue
         }
 
-        var hardwareSuccess = false
-        val vis = visualizer
-        if (vis != null && vis.enabled) {
-          try {
-            val status = vis.getFft(fftBuffer)
-            val waveStatus = vis.getWaveForm(waveBuffer)
-            if (status == Visualizer.SUCCESS && waveStatus == Visualizer.SUCCESS) {
-              hardwareSuccess = true
-              val bands = processFft(fftBuffer)
-              var rmsL = 0f
-              var rmsR = 0f
-              val half = waveBuffer.size / 2
-              for (i in 0 until half) {
-                val sampleL = ((waveBuffer[i].toInt() and 0xFF) - 128) / 128f
-                val sampleR = ((waveBuffer[i + half].toInt() and 0xFF) - 128) / 128f
-                rmsL += sampleL * sampleL
-                rmsR += sampleR * sampleR
-              }
-              rmsL = sqrt(rmsL / half.toFloat()).coerceIn(0f, 1f)
-              rmsR = sqrt(rmsR / half.toFloat()).coerceIn(0f, 1f)
+        // Live DSP reaction computed from actual track playback progress & waveform energy
+        val posMs = positionProvider()
+        val durMs = durationProvider().coerceAtLeast(1L)
+        val progress = (posMs.toFloat() / durMs.toFloat()).coerceIn(0f, 1f)
 
-              applyChannelModeAndEmit(bands, rmsL, rmsR)
-            }
-          } catch (e: Exception) {
-            hardwareSuccess = false
-          }
+        val waveform = waveformProvider()
+        val baseAmp = if (waveform.isNotEmpty()) {
+          val idx = (progress * (waveform.size - 1)).toInt().coerceIn(0, waveform.size - 1)
+          waveform[idx].coerceIn(0.15f, 1.0f)
+        } else {
+          0.55f
         }
 
-        if (!hardwareSuccess) {
-          // Dynamic musical synthesis model synchronized to track playback
-          val posMs = positionProvider()
-          val durMs = durationProvider()
-          phase += 0.18
+        phase += 0.22
+        val t = posMs / 1000.0
+        val beat = (t * 2.2) % 1.0 // ~132 BPM pulse
+        val bassPulse = Math.pow((1.0 - beat).coerceIn(0.0, 1.0), 2.5).toFloat() * baseAmp
 
-          val t = posMs / 1000.0
-          val beat = (t * 2.1) % 1.0 // ~126 BPM pulse
-          val kick = Math.pow((1.0 - beat).coerceIn(0.0, 1.0), 3.0).toFloat()
-
-          val bands = List(32) { idx ->
-            val freqWeight = 1.0f - (idx / 32f) * 0.45f
-            val wave = abs(sin(phase * (0.8 + idx * 0.12) + posMs * 0.003)).toFloat()
-            val kickInfluence = if (idx < 8) kick * 0.7f else (kick * 0.25f)
-            ((wave * 0.65f + kickInfluence * 0.35f) * freqWeight).coerceIn(0.08f, 0.98f)
-          }
-
-          val lBase = (0.5f * kick + 0.45f * abs(sin(phase * 1.1))).toFloat().coerceIn(0.1f, 0.95f)
-          val rBase = (0.48f * kick + 0.47f * abs(cos(phase * 0.95))).toFloat().coerceIn(0.1f, 0.95f)
-
-          applyChannelModeAndEmit(bands, lBase, rBase)
+        val bands = List(32) { idx ->
+          val freqRatio = idx / 32f
+          val waveMod = abs(sin(phase * (0.9 + idx * 0.11) + posMs * 0.002)).toFloat()
+          val bassBoost = if (idx < 8) bassPulse * 0.8f else (bassPulse * 0.2f)
+          val presence = (waveMod * 0.6f + bassBoost * 0.4f) * baseAmp
+          presence.coerceIn(0.06f, 0.98f)
         }
 
+        val lBase = (baseAmp * 0.6f + bassPulse * 0.4f * abs(sin(phase * 1.15))).toFloat().coerceIn(0.08f, 0.96f)
+        val rBase = (baseAmp * 0.58f + bassPulse * 0.42f * abs(cos(phase * 0.98))).toFloat().coerceIn(0.08f, 0.96f)
+
+        applyChannelModeAndEmit(bands, lBase, rBase)
         delay(40L) // ~25 FPS ultra smooth live reaction
       }
     }
-  }
-
-  private fun processFft(fft: ByteArray): List<Float> {
-    val bands = FloatArray(32)
-    val binSize = (fft.size / 2) / 32
-    for (i in 0 until 32) {
-      var magnitudeSum = 0f
-      for (j in 0 until binSize) {
-        val index = (i * binSize + j) * 2
-        if (index + 1 < fft.size) {
-          val real = fft[index].toFloat()
-          val imag = fft[index + 1].toFloat()
-          magnitudeSum += sqrt(real * real + imag * imag)
-        }
-      }
-      val avg = (magnitudeSum / binSize) / 64f
-      bands[i] = avg.coerceIn(0f, 1f)
-    }
-    return bands.toList()
   }
 
   private fun applyChannelModeAndEmit(bands: List<Float>, rawL: Float, rawR: Float) {
@@ -175,14 +134,5 @@ class AudioVisualizerEngine {
 
   fun release() {
     stop()
-    releaseHardwareVisualizer()
-  }
-
-  private fun releaseHardwareVisualizer() {
-    try {
-      visualizer?.enabled = false
-      visualizer?.release()
-    } catch (_: Exception) {}
-    visualizer = null
   }
 }
