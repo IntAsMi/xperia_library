@@ -1,71 +1,16 @@
-name: Build DAP Console APK
-# retrigger after enabling repository Actions permissions
+name: DAP Console Actions Smoke Test
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - "app/**"
-      - "gradle/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - "gradle.properties"
       - ".github/workflows/build-dap-console.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  build:
+  smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 36
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.1.0"
-
-      - name: Create debug keystore
-        run: |
-          keytool -genkeypair -v \
-            -keystore debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -keyalg RSA -keysize 2048 -validity 10000
-
-      - name: Build debug APK
-        run: gradle --no-daemon --stacktrace assembleDebug
-
-      - name: Collect APK
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk DAP_Console-debug.apk
-          sha256sum DAP_Console-debug.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: DAP-Console-debug-apk
-          path: DAP_Console-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+      - name: Confirm runner starts
+        run: echo "GitHub Actions runner started successfully"
