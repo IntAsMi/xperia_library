@@ -304,17 +304,42 @@ object AudioMetadataExtractor {
     val rnd = Random(seed)
     val left = mutableListOf<Float>()
     val right = mutableListOf<Float>()
-    var prevL = 0.45f
-    var prevR = 0.42f
+
+    val isClassical = seedKey.contains("sonata", ignoreCase = true) || seedKey.contains("beethoven", ignoreCase = true)
+    val isElectronic = seedKey.contains("electronic", ignoreCase = true) || seedKey.contains("idm", ignoreCase = true)
+    val isJazz = seedKey.contains("jazz", ignoreCase = true)
+    val isAcoustic = seedKey.contains("acoustic", ignoreCase = true) || seedKey.contains("dsd", ignoreCase = true)
+
+    var prevL = if (isElectronic) 0.65f else 0.40f
+    var prevR = if (isElectronic) 0.60f else 0.38f
+
     for (i in 0 until barsCount) {
-      val pos = i.toFloat() / barsCount.toFloat()
-      val envelope = Math.sin(pos * Math.PI).toFloat().coerceIn(0.2f, 1.0f)
-      val deltaL = (rnd.nextFloat() - 0.5f) * 0.35f
-      val deltaR = (rnd.nextFloat() - 0.5f) * 0.35f
-      prevL = (prevL + deltaL).coerceIn(0.15f, 0.95f)
-      prevR = (prevR + deltaR).coerceIn(0.15f, 0.95f)
-      left.add((prevL * envelope).coerceIn(0.12f, 1.0f))
-      right.add((prevR * envelope).coerceIn(0.12f, 1.0f))
+      val t = i.toFloat() / barsCount.toFloat()
+
+      // Section dynamics based on musical form (Intro -> Verse/A -> Chorus/Forte -> Bridge -> Climax -> Outro)
+      val sectionGain = when {
+        t < 0.12f -> 0.30f + 0.40f * (t / 0.12f) // Intro ramp
+        t < 0.32f -> 0.65f + 0.15f * kotlin.math.sin(t * 18f) // Theme A / Verse
+        t < 0.50f -> 0.88f + 0.10f * kotlin.math.sin(t * 24f) // Forte 1 / Chorus
+        t < 0.65f -> if (isElectronic) 0.35f else 0.45f + 0.15f * kotlin.math.cos(t * 12f) // Bridge / Drop
+        t < 0.88f -> 0.95f + 0.05f * kotlin.math.sin(t * 30f) // Climax
+        else -> (1.0f - (t - 0.88f) / 0.12f).coerceAtLeast(0.25f) * 0.70f // Outro / Coda
+      }
+
+      // Add genre-specific transient characteristics
+      val deltaL = (rnd.nextFloat() - 0.48f) * (if (isElectronic) 0.25f else 0.38f)
+      val deltaR = (rnd.nextFloat() - 0.48f) * (if (isElectronic) 0.25f else 0.38f)
+
+      prevL = (prevL * 0.75f + deltaL + 0.25f * sectionGain).coerceIn(0.12f, 1.0f)
+      prevR = (prevR * 0.75f + deltaR + 0.25f * sectionGain).coerceIn(0.12f, 1.0f)
+
+      // Stereo panning / divergence
+      val stereoPan = (kotlin.math.sin(t * 14f + seed % 7) * 0.12f).toFloat()
+      val ampL = (prevL * sectionGain * (1.0f + stereoPan)).coerceIn(0.08f, 1.0f)
+      val ampR = (prevR * sectionGain * (1.0f - stereoPan)).coerceIn(0.08f, 1.0f)
+
+      left.add(ampL)
+      right.add(ampR)
     }
     return left to right
   }

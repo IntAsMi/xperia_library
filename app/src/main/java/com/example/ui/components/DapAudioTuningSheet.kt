@@ -397,6 +397,7 @@ fun DapAudioTuningSheet(
                 VisualizerChannelMode.STEREO -> "STEREO L+R"
                 VisualizerChannelMode.LEFT_ONLY -> "LEFT ONLY"
                 VisualizerChannelMode.RIGHT_ONLY -> "RIGHT ONLY"
+                VisualizerChannelMode.MONO -> "MONO"
               },
               color = if (isSel) colors.onPrimary else colors.onSurface,
               fontSize = 10.sp,

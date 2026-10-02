@@ -18,7 +18,8 @@ enum class ChannelMode(val displayName: String, val description: String) {
 enum class VisualizerChannelMode(val displayName: String) {
   STEREO("Stereo (L+R)"),
   LEFT_ONLY("Left Only (Hide Right)"),
-  RIGHT_ONLY("Right Only (Hide Left)")
+  RIGHT_ONLY("Right Only (Hide Left)"),
+  MONO("Mono Downmix")
 }
 
 enum class DapFontSize(val displayName: String, val scaleFactor: Float) {

@@ -24,4 +24,19 @@ interface AudioTrackDao {
 
   @Query("SELECT COUNT(*) FROM cached_tracks")
   suspend fun getTotalTrackCount(): Int
+
+  @Query("SELECT * FROM cached_folders WHERE parentFolderUri = :parentFolderUri ORDER BY name ASC")
+  suspend fun getSubfoldersForFolder(parentFolderUri: String): List<CachedFolderEntity>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertFolders(folders: List<CachedFolderEntity>)
+
+  @Query("DELETE FROM cached_folders WHERE parentFolderUri = :parentFolderUri")
+  suspend fun clearFolders(parentFolderUri: String)
+
+  @Query("DELETE FROM cached_folders")
+  suspend fun clearAllFolders()
+
+  @Query("DELETE FROM cached_tracks")
+  suspend fun clearAllTracks()
 }

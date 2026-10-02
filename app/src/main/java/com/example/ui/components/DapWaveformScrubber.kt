@@ -63,14 +63,20 @@ fun DapWaveformScrubber(
   val effectiveProgress = if (isDragging) dragProgress else progress
 
   val barsL = when {
-    channelMode == ChannelMode.RIGHT_ONLY -> List(60) { 0.05f }
+    channelMode == ChannelMode.RIGHT_ONLY -> List(60) { 0.04f }
+    channelMode == ChannelMode.MONO -> {
+      if (waveformLeft.isNotEmpty() && waveformRight.isNotEmpty()) {
+        waveformLeft.zip(waveformRight) { l, r -> ((l + r) / 2f).coerceIn(0.08f, 1.0f) }
+      } else waveformPoints.ifEmpty { List(60) { 0.35f } }
+    }
     waveformLeft.isNotEmpty() -> waveformLeft
     waveformPoints.isNotEmpty() -> waveformPoints
     else -> remember { List(60) { 0.35f } }
   }
 
   val barsR = when {
-    channelMode == ChannelMode.LEFT_ONLY -> List(60) { 0.05f }
+    channelMode == ChannelMode.LEFT_ONLY -> List(60) { 0.04f }
+    channelMode == ChannelMode.MONO -> barsL
     waveformRight.isNotEmpty() -> waveformRight
     waveformPoints.isNotEmpty() -> waveformPoints
     else -> remember { List(60) { 0.35f } }
@@ -180,10 +186,15 @@ fun DapWaveformScrubber(
             val isPlayed = (barX + barWidth / 2f) <= currentPlayX
 
             // LEFT CHANNEL (Upper Rail - grows upwards from center)
-            val ampL = barsL[i].coerceIn(0.06f, 1.0f)
-            val barHL = (railH * ampL).coerceAtLeast(2.dp.toPx())
+            val isLeftMuted = channelMode == ChannelMode.RIGHT_ONLY
+            val ampL = if (isLeftMuted) 0.03f else barsL[i].coerceIn(0.06f, 1.0f)
+            val barHL = (railH * ampL).coerceAtLeast(1.5.dp.toPx())
             val topYL = centerY - barHL
-            val colorL = if (isPlayed) leftColor else inactiveColor
+            val colorL = when {
+              isLeftMuted -> Color(0xFF141720)
+              isPlayed -> leftColor
+              else -> inactiveColor
+            }
 
             drawRoundRect(
               color = colorL,
@@ -193,10 +204,15 @@ fun DapWaveformScrubber(
             )
 
             // RIGHT CHANNEL (Lower Rail - grows downwards from center)
-            val ampR = barsR[i].coerceIn(0.06f, 1.0f)
-            val barHR = (railH * ampR).coerceAtLeast(2.dp.toPx())
+            val isRightMuted = channelMode == ChannelMode.LEFT_ONLY
+            val ampR = if (isRightMuted) 0.03f else barsR[i].coerceIn(0.06f, 1.0f)
+            val barHR = (railH * ampR).coerceAtLeast(1.5.dp.toPx())
             val topYR = centerY + 1.dp.toPx()
-            val colorR = if (isPlayed) rightColor else inactiveColor
+            val colorR = when {
+              isRightMuted -> Color(0xFF141720)
+              isPlayed -> rightColor
+              else -> inactiveColor
+            }
 
             drawRoundRect(
               color = colorR,

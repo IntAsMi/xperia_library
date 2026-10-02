@@ -138,6 +138,8 @@ class DapAudioPlayer(private val context: Context) {
   }
 
   private fun initPlayer() {
+    dspAudioProcessor.frameListener = visualizerEngine
+
     val renderersFactory = object : DefaultRenderersFactory(context) {
       override fun buildAudioSink(
         context: Context,
@@ -238,6 +240,7 @@ class DapAudioPlayer(private val context: Context) {
             durationMs = track.durationMs
           )
           DapWidgetUpdater.updateAll(context, _state.value)
+          extractWaveformForTrack(track)
 
           // Sleep timer check: End of Track
           if (currentSleepOption == SleepTimerOption.END_OF_TRACK && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -288,7 +291,10 @@ class DapAudioPlayer(private val context: Context) {
         val metadata = MediaMetadata.Builder()
           .setTitle(track.fileName)
           .setArtist("${track.codec} • ${track.sampleRate / 1000}kHz/${track.bitDepth}bit • ${track.bitrateKbps}kbps")
+          .setAlbumTitle(track.title.ifBlank { track.fileName })
           .setDisplayTitle(track.fileName)
+          .setIsPlayable(true)
+          .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
           .build()
 
         MediaItem.Builder()
@@ -314,8 +320,42 @@ class DapAudioPlayer(private val context: Context) {
       )
 
       DapWidgetUpdater.updateAll(context, _state.value)
+      extractWaveformForTrack(current)
+
+      // Ensure MediaSessionService is aware of active session to show Quick Settings media player card
+      try {
+        DapPlaybackService.activeSession = mediaSession
+        val serviceIntent = Intent(context, DapPlaybackService::class.java)
+        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+      } catch (e: Exception) {
+        try {
+          val serviceIntent = Intent(context, DapPlaybackService::class.java)
+          context.startService(serviceIntent)
+        } catch (_: Exception) {}
+      }
     } catch (e: Exception) {
       Log.e("DapAudioPlayer", "Error starting playback: ${e.message}", e)
+    }
+  }
+
+  private fun extractWaveformForTrack(track: AudioFileItem) {
+    if (track.waveformLeft.isNotEmpty() && track.waveformRight.isNotEmpty() && !track.uriString.startsWith("content://") && !track.uriString.startsWith("file://")) {
+      return
+    }
+    scope.launch(Dispatchers.IO) {
+      val stereo = AudioWaveformExtractor.extractStereoWaveform(context, track.uriString, track.durationMs)
+      kotlinx.coroutines.withContext(Dispatchers.Main) {
+        if (_state.value.currentTrack?.id == track.id) {
+          val updated = _state.value.currentTrack?.copy(
+            waveformLeft = stereo.left,
+            waveformRight = stereo.right,
+            waveform = stereo.combined
+          )
+          if (updated != null) {
+            _state.value = _state.value.copy(currentTrack = updated)
+          }
+        }
+      }
     }
   }
 
@@ -450,6 +490,7 @@ class DapAudioPlayer(private val context: Context) {
       when (mode) {
         ChannelMode.LEFT_ONLY -> VisualizerChannelMode.LEFT_ONLY
         ChannelMode.RIGHT_ONLY -> VisualizerChannelMode.RIGHT_ONLY
+        ChannelMode.MONO -> VisualizerChannelMode.MONO
         else -> VisualizerChannelMode.STEREO
       }
     )

@@ -216,16 +216,17 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun triggerLibraryScan(targetFolderUri: String? = _uiState.value.currentFolderUri) {
-    val uriStr = targetFolderUri ?: return
-    if (uriStr.startsWith("virtual_demo://")) return
+    val uriStr = targetFolderUri ?: _uiState.value.rootFolderUri ?: "virtual_demo://root"
 
     viewModelScope.launch {
       _uiState.value = _uiState.value.copy(isScanningLibrary = true, scanProgress = 0 to 1)
       val enriched = repository.scanFolderDeep(uriStr) { current, total ->
         _uiState.value = _uiState.value.copy(scanProgress = current to total)
       }
+      val (sub, files) = repository.loadFolderContents(_uiState.value.currentFolderUri, _uiState.value.rootFolderUri)
       _uiState.value = _uiState.value.copy(
-        audioFiles = enriched,
+        subfolders = sub,
+        audioFiles = if (files.isNotEmpty()) files else enriched,
         isScanningLibrary = false,
         scanProgress = null
       )

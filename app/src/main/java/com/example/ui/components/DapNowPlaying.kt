@@ -623,17 +623,18 @@ fun ReactiveSpectrumVisualizer(
         // LEFT CHANNEL SPECTRUM (Left Half)
         for (i in 0 until count) {
           val raw = if (channelMode == com.example.model.ChannelMode.RIGHT_ONLY) 0f else bLeft.getOrElse(i) { 0f }
-          val amp = raw.coerceIn(0.04f, 1.0f)
-          val barH = h * amp
+          val barH = if (raw <= 0.02f) 0f else (h * raw.coerceIn(0.08f, 1.0f))
           val x = i * (barW + spacing)
           val y = h - barH
 
-          drawRoundRect(
-            color = if (channelMode == com.example.model.ChannelMode.RIGHT_ONLY) Color(0xFF1E222D) else leftColor,
-            topLeft = Offset(x, y),
-            size = Size(barW, barH),
-            cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-          )
+          if (barH > 0f) {
+            drawRoundRect(
+              color = leftColor,
+              topLeft = Offset(x, y),
+              size = Size(barW, barH),
+              cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+          }
         }
 
         // Center division line
@@ -649,17 +650,18 @@ fun ReactiveSpectrumVisualizer(
         val startR = divX + 4.dp.toPx()
         for (i in 0 until count) {
           val raw = if (channelMode == com.example.model.ChannelMode.LEFT_ONLY) 0f else bRight.getOrElse(i) { 0f }
-          val amp = raw.coerceIn(0.04f, 1.0f)
-          val barH = h * amp
+          val barH = if (raw <= 0.02f) 0f else (h * raw.coerceIn(0.08f, 1.0f))
           val x = startR + i * (barW + spacing)
           val y = h - barH
 
-          drawRoundRect(
-            color = if (channelMode == com.example.model.ChannelMode.LEFT_ONLY) Color(0xFF1E222D) else rightColor,
-            topLeft = Offset(x, y),
-            size = Size(barW, barH),
-            cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-          )
+          if (barH > 0f) {
+            drawRoundRect(
+              color = rightColor,
+              topLeft = Offset(x, y),
+              size = Size(barW, barH),
+              cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+          }
         }
       }
     }

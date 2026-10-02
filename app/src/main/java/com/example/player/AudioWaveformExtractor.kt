@@ -261,27 +261,7 @@ object AudioWaveformExtractor {
   }
 
   private fun generateFallbackStereo(seed: String): StereoWaveformData {
-    val hash = seed.hashCode().toLong()
-    val rnd = java.util.Random(hash)
-    val left = mutableListOf<Float>()
-    val right = mutableListOf<Float>()
-
-    var curL = 0.45f
-    var curR = 0.42f
-    for (i in 0 until BAR_COUNT) {
-      val deltaL = (rnd.nextFloat() - 0.48f) * 0.28f
-      val deltaR = (rnd.nextFloat() - 0.48f) * 0.28f
-      curL = (curL + deltaL).coerceIn(0.15f, 0.95f)
-      curR = (curR + deltaR).coerceIn(0.15f, 0.95f)
-
-      // Add music movement / peaks
-      val beat = if (i % 4 == 0) 0.25f else 0f
-      val finalL = (curL + beat).coerceIn(0.12f, 1.0f)
-      val finalR = (curR + beat * 0.9f).coerceIn(0.12f, 1.0f)
-      left.add(finalL)
-      right.add(finalR)
-    }
-
+    val (left, right) = AudioMetadataExtractor.generateStereoWaveform(seed, BAR_COUNT)
     val combined = left.zip(right) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
     return StereoWaveformData(left, right, combined)
   }
