@@ -1,5 +1,0 @@
-<resources>
-    <string name="app_name">Photography Pro</string>
-    <string name="camera_permission_rationale">Photography Pro requires camera permission to capture photos and provide real-time Alpha viewfinder.</string>
-    <string name="grant_permission">Enable Camera</string>
-</resources>

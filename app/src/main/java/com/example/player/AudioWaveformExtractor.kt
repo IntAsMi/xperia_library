@@ -72,10 +72,75 @@ object AudioWaveformExtractor {
 
   private fun extractFromWavUri(context: Context, uri: Uri): StereoWaveformData? {
     return try {
-      val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-      parseWavStream(inputStream)
+      val pfd = try { context.contentResolver.openFileDescriptor(uri, "r") } catch (_: Exception) { null }
+      if (pfd != null) {
+        val totalBytes = pfd.statSize
+        pfd.close()
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+        parseWavStreamSpan(inputStream, totalBytes)
+      } else {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+        parseWavStream(inputStream)
+      }
     } catch (_: Exception) {
       null
+    }
+  }
+
+  private fun parseWavStreamSpan(inputStream: InputStream, totalBytes: Long): StereoWaveformData? {
+    return inputStream.use { stream ->
+      val header = ByteArray(44)
+      val readBytes = stream.read(header)
+      if (readBytes < 44) return null
+
+      val riff = String(header, 0, 4)
+      val wave = String(header, 8, 4)
+      if (riff != "RIFF" || wave != "WAVE") return null
+
+      val channels = (((header[23].toInt() and 0xFF) shl 8) or (header[22].toInt() and 0xFF)).coerceAtLeast(1)
+      val bitsPerSample = (((header[35].toInt() and 0xFF) shl 8) or (header[34].toInt() and 0xFF)).coerceAtLeast(16)
+      val bytesPerSample = bitsPerSample / 8
+
+      val pcmTotalLength = (totalBytes - 44).coerceAtLeast(1000L)
+      val bytesPerBar = (pcmTotalLength / BAR_COUNT).coerceAtLeast(1024L)
+
+      val leftAmps = FloatArray(BAR_COUNT)
+      val rightAmps = FloatArray(BAR_COUNT)
+      val sliceBuffer = ByteArray(2048)
+
+      var currentStreamPos = 44L
+
+      for (bar in 0 until BAR_COUNT) {
+        val targetPos = 44L + (bar * bytesPerBar)
+        if (targetPos > currentStreamPos) {
+          val toSkip = targetPos - currentStreamPos
+          stream.skip(toSkip)
+          currentStreamPos = targetPos
+        }
+
+        val read = stream.read(sliceBuffer, 0, sliceBuffer.size)
+        if (read <= 0) break
+        currentStreamPos += read
+
+        var maxL = 0f
+        var maxR = 0f
+
+        val bb = ByteBuffer.wrap(sliceBuffer, 0, read).order(ByteOrder.LITTLE_ENDIAN)
+        val shortBuf = bb.asShortBuffer()
+        while (shortBuf.remaining() >= channels) {
+          val sL = abs(shortBuf.get().toFloat()) / 32768f
+          maxL = max(maxL, sL)
+          val sR = if (channels >= 2) {
+            abs(shortBuf.get().toFloat()) / 32768f
+          } else sL
+          maxR = max(maxR, sR)
+        }
+
+        leftAmps[bar] = maxL
+        rightAmps[bar] = maxR
+      }
+
+      normalizeStereo(leftAmps, rightAmps)
     }
   }
 
@@ -94,10 +159,18 @@ object AudioWaveformExtractor {
       val bitsPerSample = ((header[35].toInt() and 0xFF) shl 8) or (header[34].toInt() and 0xFF)
       if (bitsPerSample != 16) return null
 
-      val pcmBytes = stream.readBytes()
-      if (pcmBytes.size < 100) return null
+      // Cap at 1 MB to prevent memory bloat/OOM on giant audio files
+      val maxBytesToRead = 1024 * 1024
+      val pcmBuffer = ByteArray(maxBytesToRead)
+      var totalRead = 0
+      while (totalRead < maxBytesToRead) {
+        val r = stream.read(pcmBuffer, totalRead, maxBytesToRead - totalRead)
+        if (r <= 0) break
+        totalRead += r
+      }
+      if (totalRead < 100) return null
 
-      val shortBuffer = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+      val shortBuffer = ByteBuffer.wrap(pcmBuffer, 0, totalRead).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
       val totalFrames = shortBuffer.remaining() / channels
       if (totalFrames <= 0) return null
 

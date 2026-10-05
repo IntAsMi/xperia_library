@@ -62,24 +62,27 @@ fun DapWaveformScrubber(
 
   val effectiveProgress = if (isDragging) dragProgress else progress
 
+  val defaultBars = remember { List(60) { 0.35f } }
+  val muteBars = remember { List(60) { 0.04f } }
+
   val barsL = when {
-    channelMode == ChannelMode.RIGHT_ONLY -> List(60) { 0.04f }
+    channelMode == ChannelMode.RIGHT_ONLY -> muteBars
     channelMode == ChannelMode.MONO -> {
       if (waveformLeft.isNotEmpty() && waveformRight.isNotEmpty()) {
         waveformLeft.zip(waveformRight) { l, r -> ((l + r) / 2f).coerceIn(0.08f, 1.0f) }
-      } else waveformPoints.ifEmpty { List(60) { 0.35f } }
+      } else waveformPoints.ifEmpty { defaultBars }
     }
     waveformLeft.isNotEmpty() -> waveformLeft
     waveformPoints.isNotEmpty() -> waveformPoints
-    else -> remember { List(60) { 0.35f } }
+    else -> defaultBars
   }
 
   val barsR = when {
-    channelMode == ChannelMode.LEFT_ONLY -> List(60) { 0.04f }
+    channelMode == ChannelMode.LEFT_ONLY -> muteBars
     channelMode == ChannelMode.MONO -> barsL
     waveformRight.isNotEmpty() -> waveformRight
     waveformPoints.isNotEmpty() -> waveformPoints
-    else -> remember { List(60) { 0.35f } }
+    else -> defaultBars
   }
 
   Box(

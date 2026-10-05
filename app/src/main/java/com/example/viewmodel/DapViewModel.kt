@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.DapPreferences
 import com.example.data.FolderRepository
 import com.example.model.AudioFileItem
+import com.example.model.AudioPhaseMode
 import com.example.model.ChannelMode
 import com.example.model.DapFontSize
 import com.example.model.DapPlayerState
@@ -16,10 +17,12 @@ import com.example.model.ScanningMode
 import com.example.model.SleepTimerOption
 import com.example.model.VisualizerChannelMode
 import com.example.player.DapAudioPlayer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DapUiState(
   val rootFolderUri: String? = null,
@@ -40,7 +43,12 @@ data class DapUiState(
   val scanningMode: ScanningMode = ScanningMode.AUTOMATIC,
   val isHapticEnabled: Boolean = true,
   val isPreBufferEnabled: Boolean = true,
-  val isMultiOutputEnabled: Boolean = false
+  val isMultiOutputEnabled: Boolean = false,
+  val isSearchActive: Boolean = false,
+  val searchQuery: String = "",
+  val searchTracks: List<AudioFileItem> = emptyList(),
+  val searchFolders: List<FolderItem> = emptyList(),
+  val isBitPerfectForced: Boolean = true
 )
 
 class DapViewModel(application: Application) : AndroidViewModel(application) {
@@ -218,23 +226,91 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   fun triggerLibraryScan(targetFolderUri: String? = _uiState.value.currentFolderUri) {
     val uriStr = targetFolderUri ?: _uiState.value.rootFolderUri ?: "virtual_demo://root"
 
-    viewModelScope.launch {
-      _uiState.value = _uiState.value.copy(isScanningLibrary = true, scanProgress = 0 to 1)
-      val enriched = repository.scanFolderDeep(uriStr) { current, total ->
-        _uiState.value = _uiState.value.copy(scanProgress = current to total)
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        withContext(Dispatchers.Main) {
+          _uiState.value = _uiState.value.copy(isScanningLibrary = true, scanProgress = 0 to 1)
+        }
+        var lastUpdate = 0L
+        val enriched = repository.scanFolderDeep(uriStr) { current, total ->
+          val now = System.currentTimeMillis()
+          if (now - lastUpdate >= 100L || current == total) {
+            lastUpdate = now
+            viewModelScope.launch(Dispatchers.Main) {
+              _uiState.value = _uiState.value.copy(scanProgress = current to total)
+            }
+          }
+        }
+        val (sub, files) = repository.loadFolderContents(_uiState.value.currentFolderUri, _uiState.value.rootFolderUri)
+        withContext(Dispatchers.Main) {
+          _uiState.value = _uiState.value.copy(
+            subfolders = sub,
+            audioFiles = if (files.isNotEmpty()) files else enriched,
+            isScanningLibrary = false,
+            scanProgress = null
+          )
+        }
+      } catch (e: Exception) {
+        android.util.Log.e("DapViewModel", "Error scanning library: ${e.message}", e)
+        withContext(Dispatchers.Main) {
+          _uiState.value = _uiState.value.copy(
+            isScanningLibrary = false,
+            scanProgress = null
+          )
+        }
       }
-      val (sub, files) = repository.loadFolderContents(_uiState.value.currentFolderUri, _uiState.value.rootFolderUri)
-      _uiState.value = _uiState.value.copy(
-        subfolders = sub,
-        audioFiles = if (files.isNotEmpty()) files else enriched,
-        isScanningLibrary = false,
-        scanProgress = null
-      )
     }
   }
 
-  fun playTrack(track: AudioFileItem) {
-    player.playTrack(track, _uiState.value.audioFiles)
+  fun setSearchActive(active: Boolean) {
+    _uiState.value = _uiState.value.copy(
+      isSearchActive = active,
+      searchQuery = if (!active) "" else _uiState.value.searchQuery,
+      searchTracks = if (!active) emptyList() else _uiState.value.searchTracks,
+      searchFolders = if (!active) emptyList() else _uiState.value.searchFolders
+    )
+  }
+
+  fun updateSearchQuery(query: String) {
+    _uiState.value = _uiState.value.copy(searchQuery = query)
+    if (query.isBlank()) {
+      _uiState.value = _uiState.value.copy(searchTracks = emptyList(), searchFolders = emptyList())
+      return
+    }
+    viewModelScope.launch(Dispatchers.IO) {
+      val (folders, tracks) = repository.searchLibrary(query)
+      withContext(Dispatchers.Main) {
+        if (_uiState.value.searchQuery == query) {
+          _uiState.value = _uiState.value.copy(
+            searchTracks = tracks,
+            searchFolders = folders
+          )
+        }
+      }
+    }
+  }
+
+  fun setBitPerfectForced(forced: Boolean) {
+    _uiState.value = _uiState.value.copy(isBitPerfectForced = forced)
+    val cur = playerState.value.currentTrack
+    if (forced && cur != null) {
+      player.outputManager.updateTrackFidelity(cur)
+    }
+  }
+
+  fun requestShizukuPermission() {
+    player.requestShizukuPermission()
+  }
+
+  fun playTrack(track: AudioFileItem, customPlaylist: List<AudioFileItem>? = null) {
+    val playlist = when {
+      customPlaylist != null -> customPlaylist
+      _uiState.value.isSearchActive && _uiState.value.searchTracks.any { it.id == track.id } -> _uiState.value.searchTracks
+      _uiState.value.audioFiles.any { it.id == track.id } -> _uiState.value.audioFiles
+      else -> listOf(track)
+    }
+    val idx = playlist.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+    player.playFolder(playlist, startIndex = idx, shuffle = false)
   }
 
   fun playCurrentFolder(shuffle: Boolean = false) {
@@ -256,6 +332,7 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
 
   // Audio Tuning Drawer Controls
   fun toggleAudioPhase() = player.toggleAudioPhase()
+  fun setAudioPhaseMode(mode: AudioPhaseMode) = player.setAudioPhaseMode(mode)
   fun setChannelMode(mode: ChannelMode) = player.setChannelMode(mode)
   fun setVisualizerChannelMode(mode: VisualizerChannelMode) = player.setVisualizerChannelMode(mode)
   fun selectOutputDevice(deviceId: Int) = player.selectOutputDevice(deviceId)
@@ -275,6 +352,9 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
 
   fun setTheme(theme: DapThemeSetting) {
     prefs.setTheme(theme)
+    try {
+      com.example.widget.DapWidgetUpdater.updateAll(getApplication(), playerState.value)
+    } catch (_: Exception) {}
   }
 
   fun setPortraitLocked(locked: Boolean) {
@@ -330,6 +410,8 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
 
   override fun onCleared() {
     super.onCleared()
-    player.release()
+    if (!player.state.value.isPlaying) {
+      player.release()
+    }
   }
 }

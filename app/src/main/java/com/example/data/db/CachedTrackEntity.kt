@@ -1,12 +1,17 @@
 package com.example.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.model.AudioFileItem
 
-@Entity(tableName = "cached_tracks")
+@Entity(
+  tableName = "cached_tracks",
+  indices = [Index(value = ["parentFolderUri"])]
+)
 data class CachedTrackEntity(
-  @PrimaryKey val uriString: String,
+  @PrimaryKey val id: String,
+  val uriString: String,
   val parentFolderUri: String,
   val fileName: String,
   val title: String,
@@ -46,7 +51,7 @@ data class CachedTrackEntity(
     }
 
     return AudioFileItem(
-      id = uriString,
+      id = id,
       uriString = uriString,
       title = title,
       fileName = fileName,
@@ -73,6 +78,7 @@ data class CachedTrackEntity(
       val leftCsv = item.waveformLeft.joinToString(",") { String.format(java.util.Locale.US, "%.2f", it) }
       val rightCsv = item.waveformRight.joinToString(",") { String.format(java.util.Locale.US, "%.2f", it) }
       return CachedTrackEntity(
+        id = item.id.ifBlank { item.uriString },
         uriString = item.uriString,
         parentFolderUri = parentFolderUri,
         fileName = item.fileName,

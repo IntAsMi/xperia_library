@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,13 +22,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sync
@@ -43,7 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +75,8 @@ fun DapFolderBrowser(
   onRefreshClick: () -> Unit,
   onScanLibraryClick: () -> Unit,
   onSettingsClick: () -> Unit,
+  onToggleSearch: (Boolean) -> Unit = {},
+  onSearchQueryChange: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   val colors = MaterialTheme.colorScheme
@@ -80,7 +89,7 @@ fun DapFolderBrowser(
       .fillMaxSize()
       .background(Color(0xFF0C0E14))
   ) {
-    // 1. Technical Top Bar: Folder Path & Root Controls
+    // 1. Technical Top Bar: Folder Path & Root Controls (Or Active Search Bar)
     Column(
       modifier = Modifier
         .fillMaxWidth()
@@ -88,110 +97,191 @@ fun DapFolderBrowser(
         .border(1.dp, colors.outline.copy(alpha = 0.35f))
         .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-      ) {
+      if (uiState.isSearchActive) {
         Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          // Up Button [..]
           IconButton(
-            onClick = onNavigateUp,
+            onClick = { onToggleSearch(false) },
             modifier = Modifier.size(36.dp)
           ) {
             Icon(
-              imageVector = Icons.Default.ArrowUpward,
-              contentDescription = "Navigate Up",
+              imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+              contentDescription = "Close Search",
               tint = colors.primary,
               modifier = Modifier.size(20.dp)
             )
           }
 
-          Spacer(modifier = Modifier.width(6.dp))
+          Spacer(modifier = Modifier.width(4.dp))
 
-          // Current Folder Title
-          Column {
-            Text(
-              text = uiState.currentFolderName.uppercase(),
-              color = colors.onSurface,
-              fontSize = (13 * scale).sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
+          Box(
+            modifier = Modifier
+              .weight(1f)
+              .height(38.dp)
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF090B10))
+              .border(1.dp, colors.primary.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+              .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart
+          ) {
+            if (uiState.searchQuery.isEmpty()) {
+              Text(
+                text = "Search tracks, albums, folders...",
+                color = colors.onSurfaceVariant.copy(alpha = 0.6f),
+                fontSize = (11 * scale).sp,
+                fontFamily = FontFamily.Monospace
+              )
+            }
+            BasicTextField(
+              value = uiState.searchQuery,
+              onValueChange = onSearchQueryChange,
+              textStyle = TextStyle(
+                color = colors.onSurface,
+                fontSize = (12 * scale).sp,
+                fontFamily = FontFamily.Monospace
+              ),
+              cursorBrush = SolidColor(colors.primary),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
             )
-            Text(
-              text = uiState.currentFolderPath,
-              color = colors.onSurfaceVariant,
-              fontSize = (9 * scale).sp,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
+          }
+
+          if (uiState.searchQuery.isNotEmpty()) {
+            IconButton(
+              onClick = { onSearchQueryChange("") },
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Clear Search",
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+              )
+            }
           }
         }
-
-        // Action Icons: Scan, Pick Folder, Refresh, Settings
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          // Library Indexing Scan Button
-          IconButton(
-            onClick = onScanLibraryClick,
-            modifier = Modifier.size(36.dp)
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
           ) {
-            Icon(
-              imageVector = Icons.Default.Sync,
-              contentDescription = "Index Library Metadata & Waveforms",
-              tint = if (uiState.isScanningLibrary) colors.primary else colors.onSurfaceVariant,
-              modifier = Modifier.size(19.dp)
-            )
+            // Up Button [..]
+            IconButton(
+              onClick = onNavigateUp,
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.ArrowUpward,
+                contentDescription = "Navigate Up",
+                tint = colors.primary,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Current Folder Title
+            Column {
+              Text(
+                text = uiState.currentFolderName.uppercase(),
+                color = colors.onSurface,
+                fontSize = (13 * scale).sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              Text(
+                text = uiState.currentFolderPath,
+                color = colors.onSurfaceVariant,
+                fontSize = (9 * scale).sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
 
-          IconButton(
-            onClick = onSelectFolderClick,
-            modifier = Modifier.size(36.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Default.FolderOpen,
-              contentDescription = "Select SD Card Folder",
-              tint = colors.primary,
-              modifier = Modifier.size(20.dp)
-            )
-          }
+          // Action Icons: Search, Scan, Pick Folder, Refresh, Settings
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            // Instant Search Button
+            IconButton(
+              onClick = { onToggleSearch(true) },
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Search Library",
+                tint = colors.primary,
+                modifier = Modifier.size(20.dp)
+              )
+            }
 
-          IconButton(
-            onClick = onRefreshClick,
-            modifier = Modifier.size(36.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Default.Refresh,
-              contentDescription = "Refresh",
-              tint = colors.onSurfaceVariant,
-              modifier = Modifier.size(20.dp)
-            )
-          }
+            // Library Indexing Scan Button
+            IconButton(
+              onClick = onScanLibraryClick,
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Sync,
+                contentDescription = "Index Library Metadata & Waveforms",
+                tint = if (uiState.isScanningLibrary) colors.primary else colors.onSurfaceVariant,
+                modifier = Modifier.size(19.dp)
+              )
+            }
 
-          IconButton(
-            onClick = onSettingsClick,
-            modifier = Modifier.size(36.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Default.Settings,
-              contentDescription = "Settings",
-              tint = colors.onSurfaceVariant,
-              modifier = Modifier.size(20.dp)
-            )
+            IconButton(
+              onClick = onSelectFolderClick,
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = "Select SD Card Folder",
+                tint = colors.primary,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+
+            IconButton(
+              onClick = onRefreshClick,
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Refresh",
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+
+            IconButton(
+              onClick = onSettingsClick,
+              modifier = Modifier.size(36.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "Settings",
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+              )
+            }
           }
         }
       }
 
       // Scanning Progress Bar
       AnimatedVisibility(visible = uiState.isScanningLibrary) {
+        val (current, totalRaw) = uiState.scanProgress ?: (0 to 1)
+        val total = totalRaw.coerceAtLeast(1)
+
         Column(modifier = Modifier.padding(top = 4.dp)) {
-          val current = uiState.scanProgress?.first ?: 0
-          val total = (uiState.scanProgress?.second ?: 1).coerceAtLeast(1)
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -219,8 +309,8 @@ fun DapFolderBrowser(
         }
       }
 
-      // Folder Playback Bar if audio files exist
-      if (uiState.audioFiles.isNotEmpty()) {
+      // Folder Playback Bar if audio files exist and not searching
+      if (!uiState.isSearchActive && uiState.audioFiles.isNotEmpty()) {
         val totalMs = uiState.audioFiles.sumOf { it.durationMs }
         val totalSize = uiState.audioFiles.sumOf { it.sizeBytes }
 
@@ -295,8 +385,27 @@ fun DapFolderBrowser(
       }
     }
 
-    // 2. High-Density File & Folder List
-    if (uiState.isLoading) {
+    // 2. High-Density File & Folder List OR Search Results View
+    if (uiState.isSearchActive) {
+      SearchResultsView(
+        uiState = uiState,
+        currentPlayingId = currentPlayingId,
+        isPlaying = isPlaying,
+        scale = scale,
+        colors = colors,
+        onOpenFolder = { folder ->
+          onToggleSearch(false)
+          onOpenFolder(folder)
+        },
+        onPlayTrack = onPlayTrack,
+        onPlayAllTracks = { shuffle ->
+          if (uiState.searchTracks.isNotEmpty()) {
+            onPlayTrack(uiState.searchTracks.first())
+          }
+        },
+        onScanLibrary = onScanLibraryClick
+      )
+    } else if (uiState.isLoading) {
       Box(
         modifier = Modifier
           .fillMaxWidth()
@@ -387,7 +496,7 @@ fun DapFolderBrowser(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 70.dp)
           ) {
-            items(uiState.subfolders) { folder ->
+            items(uiState.subfolders, key = { "sub_${it.uriString}" }) { folder ->
               FolderRowItem(
                 folder = folder,
                 scale = scale,
@@ -423,7 +532,7 @@ fun DapFolderBrowser(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 70.dp)
           ) {
-            items(uiState.audioFiles) { file ->
+            items(uiState.audioFiles, key = { "track_${it.id}" }) { file ->
               val isCurrent = file.id == currentPlayingId
               AudioFileRowItem(
                 file = file,
@@ -438,34 +547,98 @@ fun DapFolderBrowser(
         }
       }
     } else {
-      // PORTRAIT: Single combined high-performance list
-      LazyColumn(
+      // PORTRAIT: Samsung One UI Ease-of-Reachability Pattern
+      // Large header space in upper half ensures the first item starts comfortably in the lower half of the screen
+      // As the user scrolls, the list glides up to utilize the entire screen.
+      BoxWithConstraints(
         modifier = Modifier
           .fillMaxWidth()
-          .weight(1f),
-        contentPadding = PaddingValues(bottom = 85.dp)
+          .weight(1f)
       ) {
-        // Subfolders
-        items(uiState.subfolders) { folder ->
-          FolderRowItem(
-            folder = folder,
-            scale = scale,
-            onClick = { onOpenFolder(folder) }
-          )
-          HorizontalDivider(color = colors.outline.copy(alpha = 0.2f), thickness = 0.5.dp)
-        }
+        val reachabilityHeight = (maxHeight * 0.40f).coerceIn(160.dp, 340.dp)
 
-        // Audio Files
-        items(uiState.audioFiles) { file ->
-          val isCurrent = file.id == currentPlayingId
-          AudioFileRowItem(
-            file = file,
-            isPlaying = isCurrent && isPlaying,
-            isCurrent = isCurrent,
-            scale = scale,
-            onClick = { onPlayTrack(file) }
-          )
-          HorizontalDivider(color = colors.outline.copy(alpha = 0.2f), thickness = 0.5.dp)
+        LazyColumn(
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(bottom = 85.dp)
+        ) {
+          // Samsung One UI Reachability Header Area
+          item(key = "one_ui_reachability_header") {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(reachabilityHeight)
+                .background(Color(0xFF0C0E14))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+              contentAlignment = Alignment.BottomStart
+            ) {
+              Column {
+                Text(
+                  text = uiState.currentFolderName.uppercase(),
+                  color = colors.onSurface,
+                  fontSize = (22 * scale).sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text(
+                    text = "${uiState.subfolders.size} FOLDERS",
+                    color = colors.primary,
+                    fontSize = (11 * scale).sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                  Text(
+                    text = " • ",
+                    color = colors.onSurfaceVariant,
+                    fontSize = (11 * scale).sp,
+                    fontFamily = FontFamily.Monospace
+                  )
+                  Text(
+                    text = "${uiState.audioFiles.size} AUDIO TRACKS",
+                    color = colors.primary,
+                    fontSize = (11 * scale).sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = uiState.currentFolderPath,
+                  color = colors.onSurfaceVariant,
+                  fontSize = (9 * scale).sp,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+              }
+            }
+          }
+
+          // Subfolders
+          items(uiState.subfolders, key = { "sub_${it.uriString}" }) { folder ->
+            FolderRowItem(
+              folder = folder,
+              scale = scale,
+              onClick = { onOpenFolder(folder) }
+            )
+            HorizontalDivider(color = colors.outline.copy(alpha = 0.2f), thickness = 0.5.dp)
+          }
+
+          // Audio Files
+          items(uiState.audioFiles, key = { "track_${it.id}" }) { file ->
+            val isCurrent = file.id == currentPlayingId
+            AudioFileRowItem(
+              file = file,
+              isPlaying = isCurrent && isPlaying,
+              isCurrent = isCurrent,
+              scale = scale,
+              onClick = { onPlayTrack(file) }
+            )
+            HorizontalDivider(color = colors.outline.copy(alpha = 0.2f), thickness = 0.5.dp)
+          }
         }
       }
     }
@@ -634,5 +807,203 @@ fun AudioFileRowItem(
       fontFamily = FontFamily.Monospace,
       fontWeight = FontWeight.Medium
     )
+  }
+}
+
+@Composable
+fun SearchResultsView(
+  uiState: DapUiState,
+  currentPlayingId: String?,
+  isPlaying: Boolean,
+  scale: Float,
+  colors: androidx.compose.material3.ColorScheme,
+  onOpenFolder: (FolderItem) -> Unit,
+  onPlayTrack: (AudioFileItem) -> Unit,
+  onPlayAllTracks: (Boolean) -> Unit,
+  onScanLibrary: () -> Unit
+) {
+  val query = uiState.searchQuery
+  val tracks = uiState.searchTracks
+  val folders = uiState.searchFolders
+
+  if (query.isBlank()) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(24.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Icon(
+        imageVector = Icons.Default.Search,
+        contentDescription = null,
+        tint = colors.primary.copy(alpha = 0.5f),
+        modifier = Modifier.size(44.dp)
+      )
+      Spacer(modifier = Modifier.height(10.dp))
+      Text(
+        text = "INSTANT INDEXED LIBRARY SEARCH",
+        color = colors.primary,
+        fontSize = (12 * scale).sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace
+      )
+      Spacer(modifier = Modifier.height(6.dp))
+      Text(
+        text = "Type any track title, artist, album, or folder name.\nResults are retrieved instantaneously from the indexed database.",
+        color = colors.onSurfaceVariant,
+        fontSize = (10 * scale).sp,
+        fontFamily = FontFamily.Monospace,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        lineHeight = 15.sp
+      )
+    }
+    return
+  }
+
+  if (tracks.isEmpty() && folders.isEmpty()) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(24.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Icon(
+        imageVector = Icons.Default.Search,
+        contentDescription = null,
+        tint = colors.onSurfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.size(44.dp)
+      )
+      Spacer(modifier = Modifier.height(10.dp))
+      Text(
+        text = "No Indexed Matches for \"$query\"",
+        color = colors.onSurface,
+        fontSize = (12 * scale).sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace
+      )
+      Spacer(modifier = Modifier.height(6.dp))
+      Text(
+        text = "If new audio files or folders were recently copied to your device, trigger a library scan to index their metadata.",
+        color = colors.onSurfaceVariant,
+        fontSize = (10 * scale).sp,
+        fontFamily = FontFamily.Monospace,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        lineHeight = 14.sp
+      )
+      Spacer(modifier = Modifier.height(14.dp))
+      Box(
+        modifier = Modifier
+          .clip(RoundedCornerShape(6.dp))
+          .background(colors.primary)
+          .clickable { onScanLibrary() }
+          .padding(horizontal = 14.dp, vertical = 8.dp)
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(imageVector = Icons.Default.Sync, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(16.dp))
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = "SCAN & INDEX LIBRARY",
+            color = colors.onPrimary,
+            fontSize = (10 * scale).sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+      }
+    }
+    return
+  }
+
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(bottom = 80.dp)
+  ) {
+    item {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(Color(0xFF10131B))
+          .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "FOUND ${tracks.size} TRACKS • ${folders.size} FOLDERS",
+          color = colors.primary,
+          fontSize = (10 * scale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace
+        )
+
+        if (tracks.isNotEmpty()) {
+          Box(
+            modifier = Modifier
+              .clip(RoundedCornerShape(4.dp))
+              .background(colors.primary)
+              .clickable { onPlayAllTracks(false) }
+              .padding(horizontal = 8.dp, vertical = 3.dp)
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(13.dp))
+              Spacer(modifier = Modifier.width(3.dp))
+              Text(
+                text = "PLAY ALL",
+                color = colors.onPrimary,
+                fontSize = (9 * scale).sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+              )
+            }
+          }
+        }
+      }
+    }
+
+    if (folders.isNotEmpty()) {
+      item {
+        Text(
+          text = "MATCHING FOLDERS:",
+          color = colors.onSurfaceVariant,
+          fontSize = (9 * scale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 4.dp)
+        )
+      }
+      items(folders, key = { "f_${it.uriString}" }) { folder ->
+        FolderRowItem(
+          folder = folder,
+          scale = scale,
+          onClick = { onOpenFolder(folder) }
+        )
+        HorizontalDivider(color = colors.outline.copy(alpha = 0.15f))
+      }
+    }
+
+    if (tracks.isNotEmpty()) {
+      item {
+        Text(
+          text = "MATCHING TRACKS:",
+          color = colors.onSurfaceVariant,
+          fontSize = (9 * scale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 4.dp)
+        )
+      }
+      items(tracks, key = { "t_${it.id}" }) { track ->
+        val isCurrent = track.id == currentPlayingId
+        AudioFileRowItem(
+          file = track,
+          isPlaying = isCurrent && isPlaying,
+          isCurrent = isCurrent,
+          scale = scale,
+          onClick = { onPlayTrack(track) }
+        )
+        HorizontalDivider(color = colors.outline.copy(alpha = 0.15f))
+      }
+    }
   }
 }

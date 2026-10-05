@@ -18,6 +18,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.RawResourceDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -40,6 +41,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +56,8 @@ class DapAudioPlayer(private val context: Context) {
   private var pollingJob: Job? = null
   private var sleepTimerJob: Job? = null
   private var bufferJob: Job? = null
+  private var waveformJob: Job? = null
+  private var specResolutionJob: Job? = null
 
   val dspAudioProcessor = AudiophileDspAudioProcessor()
   val visualizerEngine = AudioVisualizerEngine()
@@ -135,6 +139,14 @@ class DapAudioPlayer(private val context: Context) {
         _state.value = _state.value.copy(peakMeterRight = r)
       }
     }
+    scope.launch {
+      outputManager.shizukuStatus.collect { sStatus ->
+        _state.value = _state.value.copy(
+          shizukuReport = sStatus.hardwareSinkReport,
+          isShizukuPrivileged = sStatus.isPermissionGranted
+        )
+      }
+    }
   }
 
   private fun initPlayer() {
@@ -147,6 +159,7 @@ class DapAudioPlayer(private val context: Context) {
         enableAudioTrackPlaybackParams: Boolean
       ): AudioSink? {
         return DefaultAudioSink.Builder(context)
+          .setEnableFloatOutput(true) // Enforces 24-bit and 32-bit float output without truncation
           .setAudioProcessors(arrayOf(dspAudioProcessor))
           .build()
       }
@@ -160,6 +173,7 @@ class DapAudioPlayer(private val context: Context) {
           .build(),
         true
       )
+      .setWakeMode(C.WAKE_MODE_LOCAL)
       .setHandleAudioBecomingNoisy(true)
       .setSeekBackIncrementMs(10000L)
       .setSeekForwardIncrementMs(10000L)
@@ -227,6 +241,39 @@ class DapAudioPlayer(private val context: Context) {
         _state.value = _state.value.copy(isPlaying = false)
       }
 
+      override fun onTracksChanged(tracks: Tracks) {
+        for (group in tracks.groups) {
+          if (group.type == C.TRACK_TYPE_AUDIO && group.isSelected) {
+            for (i in 0 until group.length) {
+              if (group.isTrackSelected(i)) {
+                val format = group.getTrackFormat(i)
+                val current = _state.value.currentTrack
+                if (current != null) {
+                  val realSr = if (format.sampleRate > 0) format.sampleRate else current.sampleRate
+                  val realCh = if (format.channelCount > 0) format.channelCount else current.channels
+                  val realBd = when (format.pcmEncoding) {
+                    C.ENCODING_PCM_FLOAT -> 32
+                    C.ENCODING_PCM_32BIT -> 32
+                    C.ENCODING_PCM_24BIT -> 24
+                    C.ENCODING_PCM_16BIT -> 16
+                    else -> current.bitDepth
+                  }
+                  val realBr = if (format.bitrate > 0) (format.bitrate / 1000) else current.bitrateKbps
+                  val updated = current.copy(
+                    sampleRate = realSr,
+                    channels = realCh,
+                    bitDepth = realBd,
+                    bitrateKbps = realBr
+                  )
+                  _state.value = _state.value.copy(currentTrack = updated)
+                  outputManager.updateTrackFidelity(updated)
+                }
+              }
+            }
+          }
+        }
+      }
+
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         val index = exo.currentMediaItemIndex
         if (index in activePlaylist.indices) {
@@ -241,6 +288,7 @@ class DapAudioPlayer(private val context: Context) {
           )
           DapWidgetUpdater.updateAll(context, _state.value)
           extractWaveformForTrack(track)
+          resolveAndApplyGenuineSpecs(track)
 
           // Sleep timer check: End of Track
           if (currentSleepOption == SleepTimerOption.END_OF_TRACK && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -252,6 +300,37 @@ class DapAudioPlayer(private val context: Context) {
     })
 
     player = exo
+  }
+
+  fun resolveAndApplyGenuineSpecs(track: AudioFileItem) {
+    specResolutionJob?.cancel()
+    specResolutionJob = scope.launch(Dispatchers.IO) {
+      val genuine = ActualAudioSpecExtractor.extractGenuineSpecs(
+        context = context,
+        uriString = track.uriString,
+        fileName = track.fileName,
+        fileSize = track.sizeBytes,
+        fallbackItem = track
+      )
+      val updated = track.copy(
+        codec = genuine.codec,
+        sampleRate = genuine.sampleRateHz,
+        bitDepth = genuine.bitDepth,
+        bitrateKbps = genuine.bitrateKbps,
+        channels = genuine.channelCount,
+        durationMs = if (genuine.durationMs > 0L) genuine.durationMs else track.durationMs
+      )
+      withContext(Dispatchers.Main) {
+        if (_state.value.currentTrack?.id == track.id) {
+          _state.value = _state.value.copy(currentTrack = updated)
+        }
+        outputManager.updateTrackFidelity(updated)
+      }
+    }
+  }
+
+  fun requestShizukuPermission() {
+    outputManager.requestShizukuPermission()
   }
 
   fun playFolder(tracks: List<AudioFileItem>, startIndex: Int = 0, shuffle: Boolean = false) {
@@ -321,6 +400,7 @@ class DapAudioPlayer(private val context: Context) {
 
       DapWidgetUpdater.updateAll(context, _state.value)
       extractWaveformForTrack(current)
+      resolveAndApplyGenuineSpecs(current)
 
       // Ensure MediaSessionService is aware of active session to show Quick Settings media player card
       try {
@@ -339,10 +419,8 @@ class DapAudioPlayer(private val context: Context) {
   }
 
   private fun extractWaveformForTrack(track: AudioFileItem) {
-    if (track.waveformLeft.isNotEmpty() && track.waveformRight.isNotEmpty() && !track.uriString.startsWith("content://") && !track.uriString.startsWith("file://")) {
-      return
-    }
-    scope.launch(Dispatchers.IO) {
+    waveformJob?.cancel()
+    waveformJob = scope.launch(Dispatchers.IO) {
       val stereo = AudioWaveformExtractor.extractStereoWaveform(context, track.uriString, track.durationMs)
       kotlinx.coroutines.withContext(Dispatchers.Main) {
         if (_state.value.currentTrack?.id == track.id) {
@@ -384,22 +462,31 @@ class DapAudioPlayer(private val context: Context) {
   fun skipNext() {
     val exo = player ?: return
     performTactileFeedback()
-    if (exo.hasNextMediaItem()) {
-      exo.seekToNextMediaItem()
-    } else if (_state.value.repeatMode == 1 && activePlaylist.isNotEmpty()) {
-      exo.seekTo(0, 0L)
+    try {
+      if (exo.hasNextMediaItem()) {
+        exo.seekToNextMediaItem()
+      } else if (exo.mediaItemCount > 0 && (_state.value.repeatMode == 1 || _state.value.repeatMode == 0)) {
+        exo.seekTo(0, 0L)
+      }
+    } catch (e: Exception) {
+      Log.e("DapAudioPlayer", "Error during skipNext: ${e.message}", e)
     }
   }
 
   fun skipPrevious() {
     val exo = player ?: return
     performTactileFeedback()
-    if (exo.currentPosition > 3000L) {
-      exo.seekTo(0L)
-    } else if (exo.hasPreviousMediaItem()) {
-      exo.seekToPreviousMediaItem()
-    } else if (activePlaylist.isNotEmpty()) {
-      exo.seekTo(activePlaylist.size - 1, 0L)
+    try {
+      if (exo.currentPosition > 3000L) {
+        exo.seekTo(0L)
+      } else if (exo.hasPreviousMediaItem()) {
+        exo.seekToPreviousMediaItem()
+      } else if (exo.mediaItemCount > 0) {
+        val targetIdx = (exo.mediaItemCount - 1).coerceAtLeast(0)
+        exo.seekTo(targetIdx, 0L)
+      }
+    } catch (e: Exception) {
+      Log.e("DapAudioPlayer", "Error during skipPrevious: ${e.message}", e)
     }
   }
 
@@ -473,9 +560,22 @@ class DapAudioPlayer(private val context: Context) {
    */
   fun toggleAudioPhase() {
     performTactileFeedback()
-    val newPhase = !_state.value.audioPhaseInverted
-    dspAudioProcessor.isPhaseInverted = newPhase
-    _state.value = _state.value.copy(audioPhaseInverted = newPhase)
+    val newMode = if (_state.value.audioPhaseMode == com.example.model.AudioPhaseMode.NORMAL) {
+      com.example.model.AudioPhaseMode.INVERT_BOTH
+    } else {
+      com.example.model.AudioPhaseMode.NORMAL
+    }
+    setAudioPhaseMode(newMode)
+  }
+
+  fun setAudioPhaseMode(mode: com.example.model.AudioPhaseMode) {
+    performTactileFeedback()
+    dspAudioProcessor.phaseMode = mode
+    dspAudioProcessor.isPhaseInverted = mode != com.example.model.AudioPhaseMode.NORMAL
+    _state.value = _state.value.copy(
+      audioPhaseMode = mode,
+      audioPhaseInverted = mode != com.example.model.AudioPhaseMode.NORMAL
+    )
   }
 
   /**

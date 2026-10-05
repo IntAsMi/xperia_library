@@ -10,7 +10,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,7 +64,9 @@ class MainActivity : ComponentActivity() {
 
       MyApplicationTheme(themeSetting = themeSetting) {
         Surface(
-          modifier = Modifier.fillMaxSize(),
+          modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars),
           color = Color(0xFF0A0C12)
         ) {
           DapMainScreen(viewModel = dapViewModel)

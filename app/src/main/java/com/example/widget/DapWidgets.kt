@@ -10,13 +10,61 @@ import android.view.View
 import android.widget.RemoteViews
 import com.example.MainActivity
 import com.example.R
+import com.example.data.DapPreferences
 import com.example.model.AudioFileItem
 import com.example.model.DapPlayerState
+import com.example.model.DapThemeSetting
 import com.example.model.formatDuration
 
 const val ACTION_WIDGET_PLAY_PAUSE = "com.example.dap.ACTION_WIDGET_PLAY_PAUSE"
 const val ACTION_WIDGET_NEXT = "com.example.dap.ACTION_WIDGET_NEXT"
 const val ACTION_WIDGET_PREV = "com.example.dap.ACTION_WIDGET_PREV"
+
+data class WidgetThemePalette(
+  val backgroundColor: Int,
+  val titleColor: Int,
+  val subtitleColor: Int,
+  val timeColor: Int,
+  val accentColor: Int,
+  val buttonColor: Int
+)
+
+fun getWidgetPalette(theme: DapThemeSetting): WidgetThemePalette {
+  return when (theme) {
+    DapThemeSetting.LIGHT -> WidgetThemePalette(
+      backgroundColor = 0xFFF2F4F8.toInt(),
+      titleColor = 0xFF12141A.toInt(),
+      subtitleColor = 0xFFB87C00.toInt(),
+      timeColor = 0xFF585F70.toInt(),
+      accentColor = 0xFFB87C00.toInt(),
+      buttonColor = 0xFF2A2E3C.toInt()
+    )
+    DapThemeSetting.AMOLED_BLACK -> WidgetThemePalette(
+      backgroundColor = 0xFF000000.toInt(),
+      titleColor = 0xFFFFFFFF.toInt(),
+      subtitleColor = 0xFF00E5FF.toInt(), // Cyan
+      timeColor = 0xFFA0A8BC.toInt(),
+      accentColor = 0xFF00E5FF.toInt(),
+      buttonColor = 0xFF00E5FF.toInt()
+    )
+    DapThemeSetting.MATERIAL_U -> WidgetThemePalette(
+      backgroundColor = 0xFF151924.toInt(),
+      titleColor = 0xFFE6E8F0.toInt(),
+      subtitleColor = 0xFF8AB4F8.toInt(), // Soft Blue
+      timeColor = 0xFFA4AAB8.toInt(),
+      accentColor = 0xFF8AB4F8.toInt(),
+      buttonColor = 0xFF8AB4F8.toInt()
+    )
+    DapThemeSetting.DARK, DapThemeSetting.SYSTEM -> WidgetThemePalette(
+      backgroundColor = 0xFF121418.toInt(),
+      titleColor = 0xFFFFFFFF.toInt(),
+      subtitleColor = 0xFFE0A938.toInt(), // Amber
+      timeColor = 0xFFA0A3B0.toInt(),
+      accentColor = 0xFFE0A938.toInt(),
+      buttonColor = 0xFFE0A938.toInt()
+    )
+  }
+}
 
 class DapSimpleWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -33,6 +81,8 @@ class DapSimpleWidgetProvider : AppWidgetProvider() {
       state: DapPlayerState?
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_dap_simple_2x1)
+      val prefs = DapPreferences(context)
+      val palette = getWidgetPalette(prefs.getTheme())
 
       val openIntent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -42,6 +92,13 @@ class DapSimpleWidgetProvider : AppWidgetProvider() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
       )
       views.setOnClickPendingIntent(R.id.widget_simple_root, openPending)
+
+      // Apply theme colors to views
+      views.setInt(R.id.widget_simple_root, "setBackgroundColor", palette.backgroundColor)
+      views.setTextColor(R.id.widget_simple_title, palette.titleColor)
+      views.setTextColor(R.id.widget_simple_subtitle, palette.subtitleColor)
+      views.setTextColor(R.id.widget_simple_time, palette.timeColor)
+      views.setTextColor(R.id.widget_simple_state, palette.accentColor)
 
       if (state != null && state.currentTrack != null) {
         val track = state.currentTrack
@@ -76,6 +133,8 @@ class DapControlsWidgetProvider : AppWidgetProvider() {
       state: DapPlayerState?
     ) {
       val views = RemoteViews(context.packageName, R.layout.widget_dap_controls_4x1)
+      val prefs = DapPreferences(context)
+      val palette = getWidgetPalette(prefs.getTheme())
 
       val openIntent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -86,6 +145,15 @@ class DapControlsWidgetProvider : AppWidgetProvider() {
       )
       views.setOnClickPendingIntent(R.id.widget_controls_info_container, openPending)
       views.setOnClickPendingIntent(R.id.widget_controls_app_icon, openPending)
+
+      // Apply theme colors to views
+      views.setInt(R.id.widget_controls_root, "setBackgroundColor", palette.backgroundColor)
+      views.setTextColor(R.id.widget_controls_title, palette.titleColor)
+      views.setTextColor(R.id.widget_controls_folder, palette.subtitleColor)
+      views.setTextColor(R.id.widget_controls_specs_time, palette.timeColor)
+      views.setInt(R.id.widget_btn_prev, "setColorFilter", palette.buttonColor)
+      views.setInt(R.id.widget_btn_play_pause, "setColorFilter", palette.accentColor)
+      views.setInt(R.id.widget_btn_next, "setColorFilter", palette.buttonColor)
 
       // Prev Button PendingIntent
       val prevIntent = Intent(ACTION_WIDGET_PREV).setPackage(context.packageName)

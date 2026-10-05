@@ -19,5 +19,6 @@ debug.keystore
 
 # Keep prebuilt APK releases tracked in git
 !/release/*.apk
+!/releases/*.apk
 !/*.apk
 

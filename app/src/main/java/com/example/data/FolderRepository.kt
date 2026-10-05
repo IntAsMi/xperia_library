@@ -168,87 +168,117 @@ class FolderRepository(private val context: Context) {
       return@withContext allTracks
     }
 
-    val targetUri = Uri.parse(rootFolderUriStr)
-    val rootDoc = DocumentFile.fromTreeUri(context, targetUri) ?: return@withContext emptyList()
-
-    val folderQueue = ArrayDeque<Pair<DocumentFile, String>>() // DocumentFile to parentUriStr
-    folderQueue.add(rootDoc to rootFolderUriStr)
-
-    val allFoldersToCache = mutableListOf<CachedFolderEntity>()
-    val allTracksToCache = mutableListOf<CachedTrackEntity>()
-    val rootFolderTracks = mutableListOf<AudioFileItem>()
-
-    var totalFilesProcessed = 0
-    var estimatedTotal = 20
-
-    while (folderQueue.isNotEmpty()) {
-      val (currentDoc, currentParentUriStr) = folderQueue.removeFirst()
-      val currentFolderUriStr = currentDoc.uri.toString()
-
-      try {
-        val children = currentDoc.listFiles()
-        val childFolders = children.filter { it.isDirectory }
-        val childAudio = children.filter { !it.isDirectory && (it.name?.substringAfterLast('.', "")?.lowercase() in supportedExtensions) }
-
-        estimatedTotal += childAudio.size
-
-        // Add subfolders to queue and cache
-        for (f in childFolders) {
-          folderQueue.add(f to currentFolderUriStr)
-          val folderItem = FolderItem(
-            uriString = f.uri.toString(),
-            name = f.name ?: "Folder",
-            path = f.uri.path ?: "",
-            fileCount = 0,
-            subfolderCount = 0
-          )
-          allFoldersToCache.add(CachedFolderEntity.fromFolderItem(folderItem, currentFolderUriStr))
+    try {
+      val targetUri = Uri.parse(rootFolderUriStr)
+      val rootDoc = try {
+        if (targetUri.scheme == "file") {
+          val file = java.io.File(targetUri.path ?: "")
+          if (file.exists() && file.isDirectory) DocumentFile.fromFile(file) else null
+        } else {
+          DocumentFile.fromTreeUri(context, targetUri) ?: DocumentFile.fromSingleUri(context, targetUri)
         }
+      } catch (_: Exception) {
+        null
+      } ?: return@withContext emptyList()
 
-        // Process audio files in this folder
-        for (audioFile in childAudio) {
-          val name = audioFile.name ?: continue
-          val item = AudioMetadataExtractor.extractMetadata(
-            context = context,
-            uri = audioFile.uri,
-            fileName = name,
-            fileSize = audioFile.length(),
-            rawPath = audioFile.uri.path ?: name
-          )
+      val folderQueue = ArrayDeque<Pair<DocumentFile, String>>() // DocumentFile to parentUriStr
+      folderQueue.add(rootDoc to rootFolderUriStr)
 
-          allTracksToCache.add(CachedTrackEntity.fromAudioFileItem(item, currentFolderUriStr))
-          if (currentFolderUriStr == rootFolderUriStr) {
-            rootFolderTracks.add(item)
+      val allFoldersToCache = mutableListOf<CachedFolderEntity>()
+      val allTracksToCache = mutableListOf<CachedTrackEntity>()
+      val rootFolderTracks = mutableListOf<AudioFileItem>()
+
+      var totalFilesProcessed = 0
+      var estimatedTotal = 20
+
+      while (folderQueue.isNotEmpty()) {
+        val (currentDoc, currentParentUriStr) = folderQueue.removeFirst()
+        val currentFolderUriStr = currentDoc.uri.toString()
+
+        try {
+          val children = currentDoc.listFiles()
+          val childFolders = children.filter { it.isDirectory }
+          val childAudio = children.filter { !it.isDirectory && (it.name?.substringAfterLast('.', "")?.lowercase() in supportedExtensions) }
+
+          estimatedTotal += childAudio.size
+
+          val folderItems = mutableListOf<FolderItem>()
+          val tracksInFolder = mutableListOf<AudioFileItem>()
+
+          // Add subfolders to queue and cache
+          for (f in childFolders) {
+            folderQueue.add(f to currentFolderUriStr)
+            val folderItem = FolderItem(
+              uriString = f.uri.toString(),
+              name = f.name ?: "Folder",
+              path = f.uri.path ?: "",
+              fileCount = 0,
+              subfolderCount = 0
+            )
+            folderItems.add(folderItem)
+            allFoldersToCache.add(CachedFolderEntity.fromFolderItem(folderItem, currentFolderUriStr))
           }
 
-          totalFilesProcessed++
-          onProgress(totalFilesProcessed, estimatedTotal)
+          // Process audio files in this folder
+          for (audioFile in childAudio) {
+            val name = audioFile.name ?: continue
+            val item = try {
+              AudioMetadataExtractor.extractMetadata(
+                context = context,
+                uri = audioFile.uri,
+                fileName = name,
+                fileSize = audioFile.length(),
+                rawPath = audioFile.uri.path ?: name
+              )
+            } catch (_: Exception) {
+              AudioMetadataExtractor.fastEstimateItem(
+                uri = audioFile.uri,
+                fileName = name,
+                fileSize = audioFile.length(),
+                rawPath = audioFile.uri.path ?: name
+              )
+            }
+
+            tracksInFolder.add(item)
+            allTracksToCache.add(CachedTrackEntity.fromAudioFileItem(item, currentFolderUriStr))
+            if (currentFolderUriStr == rootFolderUriStr) {
+              rootFolderTracks.add(item)
+            }
+
+            totalFilesProcessed++
+            onProgress(totalFilesProcessed, estimatedTotal.coerceAtLeast(totalFilesProcessed))
+          }
+
+          memoryCache[currentFolderUriStr] = folderItems to tracksInFolder
+
+        } catch (e: Exception) {
+          e.printStackTrace()
         }
 
-      } catch (e: Exception) {
-        e.printStackTrace()
+        // Batch persist to Room database periodically
+        if (allFoldersToCache.size >= 50) {
+          try { dao.insertFolders(allFoldersToCache.toList()); allFoldersToCache.clear() } catch (_: Exception) {}
+        }
+        if (allTracksToCache.size >= 50) {
+          try { dao.insertTracks(allTracksToCache.toList()); allTracksToCache.clear() } catch (_: Exception) {}
+        }
       }
 
-      // Batch persist to Room database periodically
-      if (allFoldersToCache.size >= 50) {
-        try { dao.insertFolders(allFoldersToCache.toList()); allFoldersToCache.clear() } catch (_: Exception) {}
+      // Flush any remaining records into Room
+      if (allFoldersToCache.isNotEmpty()) {
+        try { dao.insertFolders(allFoldersToCache) } catch (_: Exception) {}
       }
-      if (allTracksToCache.size >= 50) {
-        try { dao.insertTracks(allTracksToCache.toList()); allTracksToCache.clear() } catch (_: Exception) {}
+      if (allTracksToCache.isNotEmpty()) {
+        try { dao.insertTracks(allTracksToCache) } catch (_: Exception) {}
       }
-    }
 
-    // Flush any remaining records into Room
-    if (allFoldersToCache.isNotEmpty()) {
-      try { dao.insertFolders(allFoldersToCache) } catch (_: Exception) {}
+      onProgress(totalFilesProcessed, totalFilesProcessed.coerceAtLeast(1))
+      rootFolderTracks.sortWith(compareBy({ it.diskNumber }, { it.trackNumber }, { it.fileName.lowercase() }))
+      return@withContext rootFolderTracks
+    } catch (e: Exception) {
+      android.util.Log.e("FolderRepository", "Error scanning deep: ${e.message}", e)
+      return@withContext emptyList()
     }
-    if (allTracksToCache.isNotEmpty()) {
-      try { dao.insertTracks(allTracksToCache) } catch (_: Exception) {}
-    }
-
-    onProgress(totalFilesProcessed, totalFilesProcessed)
-    rootFolderTracks.sortWith(compareBy({ it.diskNumber }, { it.trackNumber }, { it.fileName.lowercase() }))
-    return@withContext rootFolderTracks
   }
 
   fun getBundledDemoFolders(): List<FolderItem> {
@@ -321,7 +351,7 @@ class FolderRepository(private val context: Context) {
     val combined = left.zip(right) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
     return AudioFileItem(
       id = id,
-      uriString = "android.resource://${context.packageName}/raw/demo_synth",
+      uriString = "android.resource://${context.packageName}/raw/demo_synth?id=$id",
       title = title,
       fileName = fileName,
       extension = if (fileName.contains(".")) ".${fileName.substringAfterLast('.')}" else ".${codec.lowercase()}",
@@ -390,5 +420,52 @@ class FolderRepository(private val context: Context) {
       }
       else -> return getBundledDemoFolders() to emptyList()
     }
+  }
+
+  suspend fun searchLibrary(query: String): Pair<List<FolderItem>, List<AudioFileItem>> = withContext(Dispatchers.IO) {
+    if (query.isBlank()) return@withContext Pair(emptyList(), emptyList())
+    val cleanQ = query.trim()
+
+    val dbTracks = try {
+      dao.searchTracks(cleanQ).map { it.toAudioFileItem() }
+    } catch (_: Exception) {
+      emptyList()
+    }
+
+    val dbFolders = try {
+      dao.searchFolders(cleanQ).map { it.toFolderItem() }
+    } catch (_: Exception) {
+      emptyList()
+    }
+
+    val memTracks = mutableListOf<AudioFileItem>()
+    val memFolders = mutableListOf<FolderItem>()
+
+    for ((_, pair) in memoryCache) {
+      val (folders, tracks) = pair
+      for (f in folders) {
+        if (f.name.contains(cleanQ, ignoreCase = true) &&
+          memFolders.none { it.uriString == f.uriString } &&
+          dbFolders.none { it.uriString == f.uriString }
+        ) {
+          memFolders.add(f)
+        }
+      }
+      for (t in tracks) {
+        if ((t.fileName.contains(cleanQ, ignoreCase = true) ||
+            t.title.contains(cleanQ, ignoreCase = true) ||
+            t.filePath.contains(cleanQ, ignoreCase = true)) &&
+          memTracks.none { it.id == t.id } &&
+          dbTracks.none { it.id == t.id }
+        ) {
+          memTracks.add(t)
+        }
+      }
+    }
+
+    val combinedFolders = (dbFolders + memFolders).distinctBy { it.uriString }
+    val combinedTracks = (dbTracks + memTracks).distinctBy { it.id }
+
+    Pair(combinedFolders, combinedTracks)
   }
 }

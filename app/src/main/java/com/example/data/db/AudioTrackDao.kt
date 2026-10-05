@@ -39,4 +39,10 @@ interface AudioTrackDao {
 
   @Query("DELETE FROM cached_tracks")
   suspend fun clearAllTracks()
+
+  @Query("SELECT * FROM cached_tracks WHERE fileName LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%' OR filePath LIKE '%' || :query || '%' ORDER BY title ASC, fileName ASC LIMIT 200")
+  suspend fun searchTracks(query: String): List<CachedTrackEntity>
+
+  @Query("SELECT * FROM cached_folders WHERE name LIKE '%' || :query || '%' ORDER BY name ASC LIMIT 50")
+  suspend fun searchFolders(query: String): List<CachedFolderEntity>
 }

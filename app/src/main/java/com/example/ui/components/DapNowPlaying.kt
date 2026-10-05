@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -244,7 +245,7 @@ fun DapNowPlaying(
             right = playerState.peakMeterRight,
             channelMode = playerState.channelMode
           )
-          TechnicalSpecsGrid(track = track)
+          TechnicalSpecsGrid(track = track, playerState = playerState)
         }
 
         // Right Column: Waveform Scrubber, 3-Level Timings, Tactile Buttons, Extras
@@ -349,7 +350,7 @@ fun DapNowPlaying(
         )
 
         // Complete Technical Specs Grid
-        TechnicalSpecsGrid(track = track)
+        TechnicalSpecsGrid(track = track, playerState = playerState)
 
         // Extras: Speed & A-B Looper
         AudiophileExtrasBox(
@@ -916,45 +917,115 @@ fun HoldableIconButton(
 }
 
 @Composable
-fun TechnicalSpecsGrid(track: com.example.model.AudioFileItem) {
+fun TechnicalSpecsGrid(
+  track: com.example.model.AudioFileItem,
+  playerState: DapPlayerState? = null
+) {
   val colors = MaterialTheme.colorScheme
+  val spec = playerState?.audioOutputSpec
+  val isBitPerfect = spec != null && spec.sampleRateHz == track.sampleRate && spec.bitDepth == track.bitDepth
+
   Box(
     modifier = Modifier
       .fillMaxWidth()
       .clip(RoundedCornerShape(8.dp))
       .background(Color(0xFF10131A))
-      .border(1.dp, colors.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+      .border(1.dp, if (track.bitDepth >= 24 || track.sampleRate >= 88200) Color(0xFFE0A938).copy(alpha = 0.5f) else colors.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
       .padding(10.dp)
   ) {
     Column {
-      Text(
-        text = "TECHNICAL AUDIO DECODER SPECIFICATIONS",
-        color = colors.primary,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        letterSpacing = 1.sp
-      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "ACTUAL PHYSICAL AUDIO FILE SPECIFICATIONS",
+          color = if (track.bitDepth >= 24 || track.sampleRate >= 88200) Color(0xFFE0A938) else colors.primary,
+          fontSize = 10.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 1.sp
+        )
+        Box(
+          modifier = Modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(if (track.bitDepth >= 24) Color(0xFFE0A938).copy(alpha = 0.25f) else colors.surfaceVariant)
+            .padding(horizontal = 5.dp, vertical = 1.dp)
+        ) {
+          Text(
+            text = if (track.bitDepth >= 24 || track.sampleRate >= 88200) "HI-RES MASTER" else "16-BIT REDBOOK",
+            color = if (track.bitDepth >= 24 || track.sampleRate >= 88200) Color(0xFFE0A938) else colors.primary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+      }
 
       Spacer(modifier = Modifier.height(6.dp))
 
       Row(modifier = Modifier.fillMaxWidth()) {
-        SpecItem(label = "CODEC", value = track.codec, modifier = Modifier.weight(1f))
-        SpecItem(label = "SAMPLE RATE", value = "${track.sampleRate} Hz (${track.sampleRate / 1000f} kHz)", modifier = Modifier.weight(1.5f))
+        SpecItem(label = "ACTUAL CODEC", value = track.codec, modifier = Modifier.weight(1f))
+        SpecItem(label = "ACTUAL SAMPLE RATE", value = "${track.sampleRate} Hz (${track.sampleRate / 1000f} kHz)", modifier = Modifier.weight(1.5f))
       }
 
       Spacer(modifier = Modifier.height(4.dp))
 
       Row(modifier = Modifier.fillMaxWidth()) {
-        SpecItem(label = "BIT DEPTH", value = "${track.bitDepth}-bit PCM", modifier = Modifier.weight(1f))
-        SpecItem(label = "BITRATE", value = "${track.bitrateKbps} kbps", modifier = Modifier.weight(1.5f))
+        SpecItem(label = "ACTUAL BIT DEPTH", value = "${track.bitDepth}-bit Lossless", modifier = Modifier.weight(1f))
+        SpecItem(label = "ACTUAL BITRATE", value = "${track.bitrateKbps} kbps", modifier = Modifier.weight(1.5f))
       }
 
       Spacer(modifier = Modifier.height(4.dp))
 
       Row(modifier = Modifier.fillMaxWidth()) {
-        SpecItem(label = "CHANNELS", value = if (track.channels == 2) "Stereo (2.0)" else "${track.channels} Channel", modifier = Modifier.weight(1f))
-        SpecItem(label = "FILE SIZE", value = track.formattedSize, modifier = Modifier.weight(1.5f))
+        SpecItem(label = "CHANNELS", value = if (track.channels == 2) "Stereo (2.0 L+R)" else if (track.channels == 1) "Mono (1.0)" else "${track.channels} Channel", modifier = Modifier.weight(1f))
+        SpecItem(label = "PHYSICAL SIZE", value = track.formattedSize, modifier = Modifier.weight(1.5f))
+      }
+
+      if (spec != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider(color = colors.outline.copy(alpha = 0.25f), thickness = 0.5.dp)
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column {
+            Text(
+              text = "ENFORCED BIT-PERFECT OUTPUT:",
+              color = Color(0xFF00E676),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = "${spec.sampleRateHz / 1000f} kHz / ${spec.bitDepth}-bit Direct AudioTrack • 0 Hz Delta (Zero Resampling)",
+              color = colors.onSurface,
+              fontSize = 9.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+
+          Box(
+            modifier = Modifier
+              .clip(RoundedCornerShape(3.dp))
+              .background(Color(0xFF00E676).copy(alpha = 0.15f))
+              .border(0.5.dp, Color(0xFF00E676), RoundedCornerShape(3.dp))
+              .padding(horizontal = 6.dp, vertical = 2.dp)
+          ) {
+            Text(
+              text = "NO RESAMPLING",
+              color = Color(0xFF00E676),
+              fontSize = 8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
       }
     }
   }

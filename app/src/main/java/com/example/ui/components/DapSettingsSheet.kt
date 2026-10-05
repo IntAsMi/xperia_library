@@ -18,11 +18,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.ScreenLockPortrait
@@ -45,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +57,7 @@ import com.example.model.DapFontSize
 import com.example.model.DapThemeSetting
 import com.example.model.ScanningMode
 import com.example.model.SleepTimerOption
+import com.example.util.BatteryOptimizationHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,11 +78,17 @@ fun DapSettingsSheet(
   onToggleMultiOutput: (Boolean) -> Unit,
   scanningMode: ScanningMode,
   onScanningModeSelect: (ScanningMode) -> Unit,
+  isBitPerfectForced: Boolean = true,
+  onToggleBitPerfect: (Boolean) -> Unit = {},
+  onRequestShizuku: () -> Unit = {},
+  isShizukuPrivileged: Boolean = false,
   onSelectRootFolder: () -> Unit,
   onDismiss: () -> Unit
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val colors = MaterialTheme.colorScheme
+  val context = LocalContext.current
+  val isBatteryOptimized = !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
 
   ModalBottomSheet(
     onDismissRequest = onDismiss,
@@ -372,6 +383,180 @@ fun DapSettingsSheet(
           onCheckedChange = onToggleMultiOutput,
           colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary, checkedTrackColor = colors.primary)
         )
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Audiophile Bit-Perfect Output & Shizuku
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+          Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null, tint = Color(0xFFE0A938), modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
+            Text(
+              text = "FORCE BIT-PERFECT DIRECT AUDIO",
+              color = Color(0xFFE0A938),
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+            Text(
+              text = if (isBitPerfectForced) "Enforcing 1:1 bit depth & sample rate (0 Hz Delta, no SRC)" else "Standard resampling allowed",
+              color = colors.onSurfaceVariant,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+        Switch(
+          checked = isBitPerfectForced,
+          onCheckedChange = onToggleBitPerfect,
+          colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary, checkedTrackColor = Color(0xFFE0A938))
+        )
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      // Shizuku HAL Lock button in Settings
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(6.dp))
+          .background(Color(0xFF161B26))
+          .border(1.dp, if (isShizukuPrivileged) Color(0xFF00E676) else colors.primary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+          .clickable { onRequestShizuku() }
+          .padding(horizontal = 12.dp, vertical = 10.dp)
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = if (isShizukuPrivileged) "SHIZUKU PRIVILEGED HAL LOCK: ACTIVE" else "SHIZUKU PRIVILEGED HAL LOCK",
+              color = if (isShizukuPrivileged) Color(0xFF00E676) else colors.primary,
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace,
+              fontWeight = FontWeight.Bold
+            )
+            Text(
+              text = if (isShizukuPrivileged) "Kernel audio HAL offload active without Android mixer resampling." else "Tap to grant Shizuku authorization for hardware HAL bypass.",
+              color = colors.onSurfaceVariant,
+              fontSize = 8.sp,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+
+          Box(
+            modifier = Modifier
+              .clip(RoundedCornerShape(4.dp))
+              .background(if (isShizukuPrivileged) Color(0xFF1B2A1E) else colors.primary)
+              .padding(horizontal = 10.dp, vertical = 6.dp)
+          ) {
+            Text(
+              text = if (isShizukuPrivileged) "LOCKED" else "ENABLE / TEST",
+              color = if (isShizukuPrivileged) Color(0xFF00E676) else colors.onPrimary,
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+      HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Background Audio & Battery Optimization
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+          imageVector = if (isBatteryOptimized) Icons.Default.BatteryAlert else Icons.Default.BatteryChargingFull,
+          contentDescription = null,
+          tint = if (isBatteryOptimized) Color(0xFFFFA726) else Color(0xFF00E676),
+          modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+          Text(
+            text = "BACKGROUND PLAYBACK PROTECTION",
+            color = colors.onSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+          Text(
+            text = if (isBatteryOptimized) "Android Battery Saver is RESTRICTING background playback!" else "Unrestricted background audio playback is ACTIVE!",
+            color = if (isBatteryOptimized) Color(0xFFFFA726) else Color(0xFF00E676),
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Text(
+        text = "Notice: Android aggressively stops background media players after 1-2 minutes if the app is optimized for battery. To ensure audio never stops playing in the background, set this app to 'Unrestricted' battery usage below.",
+        color = colors.onSurfaceVariant,
+        fontSize = 9.sp,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = 13.sp
+      )
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (isBatteryOptimized) Color(0xFFE0A938) else colors.surfaceVariant)
+            .clickable {
+              BatteryOptimizationHelper.requestIgnoreBatteryOptimization(context)
+            }
+            .padding(vertical = 9.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = if (isBatteryOptimized) "ALLOW UNRESTRICTED" else "ALREADY UNRESTRICTED",
+            color = if (isBatteryOptimized) Color.Black else colors.onSurface,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(colors.surfaceVariant)
+            .border(1.dp, colors.outline.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+            .clickable {
+              BatteryOptimizationHelper.openAppInfoSettings(context)
+            }
+            .padding(vertical = 9.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = "APP INFO / SETTINGS",
+            color = colors.onSurface,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
       }
 
       Spacer(modifier = Modifier.height(14.dp))

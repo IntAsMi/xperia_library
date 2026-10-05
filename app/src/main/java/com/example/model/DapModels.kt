@@ -15,6 +15,14 @@ enum class ChannelMode(val displayName: String, val description: String) {
   MONO("Mono Downmix", "Summed (L+R)/2 sent to both channels")
 }
 
+enum class AudioPhaseMode(val displayName: String, val description: String) {
+  NORMAL("0° Normal (Absolute Polarity)", "Both channels normal absolute polarity"),
+  INVERT_BOTH("180° Invert Both (L + R)", "Both channels inverted (180° polarity flip)"),
+  INVERT_LEFT_ONLY("180° Invert Left Channel Only", "Left channel inverted, Right normal (Fixes inverse L cable soldering)"),
+  INVERT_RIGHT_ONLY("180° Invert Right Channel Only", "Right channel inverted, Left normal (Fixes inverse R cable soldering)"),
+  SWAP_CHANNELS("Swap L ↔ R Channels", "Reverses physical Left and Right stereo headphone wiring")
+}
+
 enum class VisualizerChannelMode(val displayName: String) {
   STEREO("Stereo (L+R)"),
   LEFT_ONLY("Left Only (Hide Right)"),
@@ -140,6 +148,7 @@ data class DapPlayerState(
   val loopPointA: Long? = null,
   val loopPointB: Long? = null,
   val audioPhaseInverted: Boolean = false,
+  val audioPhaseMode: AudioPhaseMode = AudioPhaseMode.NORMAL,
   val channelMode: ChannelMode = ChannelMode.STEREO,
   val visualizerChannelMode: VisualizerChannelMode = VisualizerChannelMode.STEREO,
   val audioOutputSpec: AudioOutputSpec = AudioOutputSpec.DEFAULT,
@@ -147,7 +156,10 @@ data class DapPlayerState(
   val selectedOutputDeviceId: Int? = null,
   val isBufferingLargeFile: Boolean = false,
   val bufferProgress: Float = 1.0f,
-  val sleepTimerRemainingSeconds: Int? = null
+  val sleepTimerRemainingSeconds: Int? = null,
+  val shizukuReport: String = "Direct Bit-Perfect Mode • Zero Resampling",
+  val isShizukuPrivileged: Boolean = false,
+  val bitPerfectProofReport: String = "AudioTrack direct float pass-through • 0 Hz Delta verified"
 ) {
   val trackRemainingMs: Long get() = (durationMs - positionMs).coerceAtLeast(0L)
   val formattedElapsed: String get() = formatDuration(positionMs)

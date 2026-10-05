@@ -1,6 +1,8 @@
 package com.example.player
 
+import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -30,6 +32,30 @@ class DapPlaybackService : MediaSessionService() {
           } catch (_: Exception) {}
         }
       }
+  }
+
+  private var wakeLock: PowerManager.WakeLock? = null
+
+  private fun acquireWakeLock() {
+    try {
+      if (wakeLock == null) {
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DapAudio:PlaybackWakeLock")?.apply {
+          setReferenceCounted(false)
+        }
+      }
+      if (wakeLock?.isHeld == false) {
+        wakeLock?.acquire(24 * 60 * 60 * 1000L) // up to 24h background playback
+      }
+    } catch (_: Exception) {}
+  }
+
+  private fun releaseWakeLock() {
+    try {
+      if (wakeLock?.isHeld == true) {
+        wakeLock?.release()
+      }
+    } catch (_: Exception) {}
   }
 
   private fun createNotificationChannel() {
@@ -98,6 +124,8 @@ class DapPlaybackService : MediaSessionService() {
         }
       } catch (_: Exception) {}
     }
+
+    acquireWakeLock()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -109,7 +137,8 @@ class DapPlaybackService : MediaSessionService() {
         }
       } catch (_: Exception) {}
     }
-    return super.onStartCommand(intent, flags, startId)
+    acquireWakeLock()
+    return START_STICKY
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -118,12 +147,19 @@ class DapPlaybackService : MediaSessionService() {
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     val player = activeSession?.player
+    // If music is actively playing, keep playing in background! Never stop playback on task swipe.
+    if (player != null && player.isPlaying) {
+      acquireWakeLock()
+      return
+    }
     if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+      releaseWakeLock()
       stopSelf()
     }
   }
 
   override fun onDestroy() {
+    releaseWakeLock()
     val s = activeSession
     if (s != null) {
       try {
@@ -134,3 +170,4 @@ class DapPlaybackService : MediaSessionService() {
     super.onDestroy()
   }
 }
+

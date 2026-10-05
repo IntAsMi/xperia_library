@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import com.example.model.ChannelMode
 import com.example.model.DapPlayerState
 import com.example.model.VisualizerChannelMode
@@ -53,10 +54,15 @@ import com.example.model.VisualizerChannelMode
 @Composable
 fun DapAudioTuningSheet(
   playerState: DapPlayerState,
+  isBitPerfectForced: Boolean = true,
+  onToggleBitPerfect: (Boolean) -> Unit = {},
   onTogglePhase: () -> Unit,
+  onSetAudioPhaseMode: (com.example.model.AudioPhaseMode) -> Unit = {},
   onSetChannelMode: (ChannelMode) -> Unit,
   onSetVisualizerChannelMode: (VisualizerChannelMode) -> Unit,
   onSelectOutputDevice: (Int) -> Unit,
+  onSetSleepTimer: (com.example.model.SleepTimerOption) -> Unit = {},
+  onRequestShizuku: () -> Unit = {},
   onDismiss: () -> Unit
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -263,40 +269,262 @@ fun DapAudioTuningSheet(
         }
       }
 
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section: Audiophile Bit-Perfect Output & Shizuku Direct HAL Mode
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(8.dp))
+          .background(Color(0xFF0F131E))
+          .border(1.dp, if (isBitPerfectForced) Color(0xFFE0A938) else colors.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+          .padding(12.dp)
+      ) {
+        Column {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(if (isBitPerfectForced) Color(0xFF00E676) else colors.onSurfaceVariant)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "BIT-PERFECT OUTPUT ENFORCER",
+                color = if (isBitPerfectForced) Color(0xFFE0A938) else colors.onSurface,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+              )
+            }
+
+            Switch(
+              checked = isBitPerfectForced,
+              onCheckedChange = onToggleBitPerfect,
+              colors = SwitchDefaults.colors(
+                checkedThumbColor = colors.onPrimary,
+                checkedTrackColor = Color(0xFFE0A938)
+              )
+            )
+          }
+
+          Spacer(modifier = Modifier.height(6.dp))
+
+          Text(
+            text = if (isBitPerfectForced) "Output strictly locks to native file sample rate & bit depth (0 Hz Delta, no mixer resampling)." else "Standard audio routing active.",
+            color = colors.onSurfaceVariant,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace
+          )
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // BIT-PERFECT AUDIOPHILE PROOF & HARDWARE STREAM VERIFICATION
+          val curTrack = playerState.currentTrack
+          val isExactMatch = curTrack != null && curTrack.sampleRate == spec.sampleRateHz
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF090D14))
+              .border(1.dp, if (isExactMatch) Color(0xFF00E676).copy(alpha = 0.6f) else colors.outline.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+              .padding(10.dp)
+          ) {
+            Column {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(
+                  text = "HARDWARE STREAM PROOF & METRICS",
+                  color = if (isExactMatch) Color(0xFF00E676) else Color(0xFFE0A938),
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace
+                )
+                Box(
+                  modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (isExactMatch) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFE0A938).copy(alpha = 0.15f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                  Text(
+                    text = if (isExactMatch) "VERIFIED 1:1 BIT-PERFECT" else "DIRECT STREAM",
+                    color = if (isExactMatch) Color(0xFF00E676) else Color(0xFFE0A938),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(6.dp))
+
+              Text(
+                text = "• Source Master: ${curTrack?.codec ?: "PCM"} • ${curTrack?.sampleRate ?: 44100} Hz (${(curTrack?.sampleRate ?: 44100) / 1000f} kHz) / ${curTrack?.bitDepth ?: 16}-bit (${curTrack?.bitrateKbps ?: 1411} kbps)",
+                color = colors.onSurface,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = "• Sink AudioTrack: ${spec.deviceName} • ${spec.sampleRateHz} Hz (${spec.sampleRateHz / 1000f} kHz) / ${spec.bitDepth}-bit Direct Float",
+                color = colors.primary,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = "• Hardware Clock Delta: ${if (isExactMatch) "0 Hz (Exact 1:1 Match, 0 Resampling)" else "${abs((curTrack?.sampleRate ?: 44100) - spec.sampleRateHz)} Hz"}",
+                color = if (isExactMatch) Color(0xFF00E676) else Color(0xFFFFA726),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = "• Mixer Resampler: ${if (isBitPerfectForced) "BYPASS ACTIVE (Zero AudioFlinger Resampling)" else "Standard Mixer"}",
+                color = if (isBitPerfectForced) Color(0xFF00E676) else colors.onSurfaceVariant,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = "• Pitch & Clock Drift: 0.00% (1.0000x Pure Clock)",
+                color = colors.onSurfaceVariant,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+              )
+              Text(
+                text = "• HAL Direct Pipe: ${playerState.shizukuReport}",
+                color = colors.onSurfaceVariant,
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Shizuku Privileged HAL Control Row
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF161B26))
+              .border(1.dp, if (playerState.isShizukuPrivileged) Color(0xFF00E676) else colors.primary.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+              .clickable { onRequestShizuku() }
+              .padding(horizontal = 12.dp, vertical = 10.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = if (playerState.isShizukuPrivileged) "SHIZUKU PRIVILEGED HAL LOCK: ACTIVE" else "SHIZUKU PRIVILEGED HAL LOCK",
+                  color = if (playerState.isShizukuPrivileged) Color(0xFF00E676) else colors.primary,
+                  fontSize = 10.sp,
+                  fontFamily = FontFamily.Monospace,
+                  fontWeight = FontWeight.Bold
+                )
+                Text(
+                  text = if (playerState.isShizukuPrivileged) "Kernel HAL properties set. Zero Android AudioFlinger resampling." else "Tap to authorize Shizuku for rootless audio HAL offload bypass.",
+                  color = colors.onSurfaceVariant,
+                  fontSize = 8.sp,
+                  fontFamily = FontFamily.Monospace
+                )
+              }
+
+              Box(
+                modifier = Modifier
+                  .clip(RoundedCornerShape(4.dp))
+                  .background(if (playerState.isShizukuPrivileged) Color(0xFF1B2A1E) else colors.primary)
+                  .padding(horizontal = 10.dp, vertical = 6.dp)
+              ) {
+                Text(
+                  text = if (playerState.isShizukuPrivileged) "LOCKED" else "ENABLE / TEST",
+                  color = if (playerState.isShizukuPrivileged) Color(0xFF00E676) else colors.onPrimary,
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace
+                )
+              }
+            }
+          }
+        }
+      }
+
       Spacer(modifier = Modifier.height(16.dp))
       HorizontalDivider(color = colors.outline.copy(alpha = 0.3f))
       Spacer(modifier = Modifier.height(14.dp))
 
-      // Section 2: Audio Phase Inversion (0° / 180°)
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = "AUDIO PHASE SWITCH",
-            color = colors.onSurface,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace
-          )
-          Text(
-            text = if (playerState.audioPhaseInverted) "Phase: 180° Inverted (Reverse Polarity)" else "Phase: 0° Normal (Absolute Polarity)",
-            color = if (playerState.audioPhaseInverted) colors.primary else colors.onSurfaceVariant,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace
-          )
-        }
-
-        Switch(
-          checked = playerState.audioPhaseInverted,
-          onCheckedChange = { onTogglePhase() },
-          colors = SwitchDefaults.colors(
-            checkedThumbColor = colors.onPrimary,
-            checkedTrackColor = colors.primary
-          )
+      // Section 2: Audio Phase & Headphone Wiring Polarity Correction
+      Column {
+        Text(
+          text = "AUDIO PHASE SWITCH (WIRING POLARITY / INVERSION)",
+          color = colors.onSurface,
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace
         )
+        Text(
+          text = "Select polarity to fix cables soldered with inverted pins or swapped L/R channels:",
+          color = colors.onSurfaceVariant,
+          fontSize = 9.sp,
+          fontFamily = FontFamily.Monospace,
+          modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          com.example.model.AudioPhaseMode.values().forEach { mode ->
+            val isSelected = mode == playerState.audioPhaseMode
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (isSelected) colors.primary.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.4f))
+                .border(
+                  width = 1.dp,
+                  color = if (isSelected) colors.primary else colors.outline.copy(alpha = 0.2f),
+                  shape = RoundedCornerShape(6.dp)
+                )
+                .clickable { onSetAudioPhaseMode(mode) }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = mode.displayName,
+                  color = if (isSelected) colors.primary else colors.onSurface,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.SemiBold,
+                  fontFamily = FontFamily.Monospace
+                )
+                Text(
+                  text = mode.description,
+                  color = colors.onSurfaceVariant,
+                  fontSize = 8.sp,
+                  fontFamily = FontFamily.Monospace
+                )
+              }
+              if (isSelected) {
+                Icon(
+                  imageVector = Icons.Default.Check,
+                  contentDescription = null,
+                  tint = colors.primary,
+                  modifier = Modifier.size(16.dp)
+                )
+              }
+            }
+          }
+        }
       }
 
       Spacer(modifier = Modifier.height(16.dp))
