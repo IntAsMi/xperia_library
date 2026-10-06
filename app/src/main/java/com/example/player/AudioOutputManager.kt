@@ -344,4 +344,8 @@ class AudioOutputManager(private val context: Context) {
       audioManager.isSpeakerphoneOn = false
     }
   }
+
+  fun testShizukuConnection() {
+    shizukuController.testConnection()
+  }
 }

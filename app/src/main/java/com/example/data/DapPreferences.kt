@@ -27,6 +27,26 @@ class DapPreferences(context: Context) {
   fun getLastVisitedFolderUri(): String? = prefs.getString("last_folder_uri", null)
   fun setLastVisitedFolderUri(uri: String?) = prefs.edit().putString("last_folder_uri", uri).apply()
 
+  fun getLastPlayedTrackUri(): String? = prefs.getString("last_track_uri", null)
+  fun getLastPlayedTrackTitle(): String? = prefs.getString("last_track_title", null)
+  fun getLastPlayedTrackCodec(): String = prefs.getString("last_track_codec", "FLAC") ?: "FLAC"
+  fun getLastPlayedTrackDuration(): Long = prefs.getLong("last_track_duration", 0L)
+  fun getLastPlayedTrackPosition(): Long = prefs.getLong("last_track_pos", 0L)
+  fun getLastPlayedTrackSampleRate(): Int = prefs.getInt("last_track_sr", 44100)
+  fun getLastPlayedTrackBitDepth(): Int = prefs.getInt("last_track_bd", 16)
+
+  fun saveLastPlayedTrack(uri: String, title: String, codec: String, duration: Long, position: Long, sr: Int, bd: Int) {
+    prefs.edit()
+      .putString("last_track_uri", uri)
+      .putString("last_track_title", title)
+      .putString("last_track_codec", codec)
+      .putLong("last_track_duration", duration)
+      .putLong("last_track_pos", position)
+      .putInt("last_track_sr", sr)
+      .putInt("last_track_bd", bd)
+      .apply()
+  }
+
   fun getTheme(): DapThemeSetting {
     val name = prefs.getString("dap_theme", DapThemeSetting.DARK.name) ?: DapThemeSetting.DARK.name
     return runCatching { DapThemeSetting.valueOf(name) }.getOrDefault(DapThemeSetting.DARK)

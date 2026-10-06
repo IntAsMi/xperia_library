@@ -25,7 +25,9 @@ data class ShizukuAudiophileStatus(
   val hardwareSinkReport: String = "Internal DAC • 1:1 Direct Stream",
   val enforcedSampleRateHz: Int = 44100,
   val enforcedBitDepth: Int = 16,
-  val lastMessage: String = "Ready for bit-perfect output enforcement"
+  val lastMessage: String = "Ready for bit-perfect output enforcement",
+  val pingLatencyMs: Long? = null,
+  val pingTestResult: String = "Not Tested"
 )
 
 class ShizukuAudiophileController(
@@ -93,6 +95,50 @@ class ShizukuAudiophileController(
         isPermissionGranted = hasPermission,
         hardwareSinkReport = if (hasPermission) "Direct HAL Bypass (0 Hz Delta • Unresampled)" else "Native AudioTrack Direct Float Output"
       )
+    }
+  }
+
+  fun testConnection() {
+    scope.launch(Dispatchers.IO) {
+      val startTime = System.currentTimeMillis()
+      val isInstalled = checkShizukuInstalled()
+      if (!isInstalled) {
+        _status.value = _status.value.copy(
+          isInstalled = false,
+          isRunning = false,
+          isPermissionGranted = false,
+          pingLatencyMs = null,
+          pingTestResult = "DISCONNECTED: Shizuku app is not installed on this device"
+        )
+        return@launch
+      }
+
+      val pingSuccess = try { Shizuku.pingBinder() } catch (_: Exception) { false }
+      val latency = System.currentTimeMillis() - startTime
+      if (pingSuccess) {
+        val hasPerm = try { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: Exception) { false }
+        val resultMsg = if (hasPerm) {
+          "CONNECTED (Privileged Binder OK • ${latency}ms latency • Rootless HAL Direct Active)"
+        } else {
+          "CONNECTED (Binder alive • ${latency}ms latency • Permission required: Tap to Authorize)"
+        }
+        _status.value = _status.value.copy(
+          isInstalled = true,
+          isRunning = true,
+          isPermissionGranted = hasPerm,
+          pingLatencyMs = latency,
+          pingTestResult = resultMsg,
+          hardwareSinkReport = if (hasPerm) "Direct HAL Bypass (0 Hz Delta • Unresampled)" else "Native AudioTrack Direct Float Output"
+        )
+      } else {
+        _status.value = _status.value.copy(
+          isInstalled = true,
+          isRunning = false,
+          isPermissionGranted = false,
+          pingLatencyMs = null,
+          pingTestResult = "DISCONNECTED: Shizuku service is not running. Please start Shizuku service in Shizuku app."
+        )
+      }
     }
   }
 

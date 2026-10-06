@@ -27,12 +27,20 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.DapViewModel
 
 class MainActivity : ComponentActivity() {
+  private var viewModelInstance: DapViewModel? = null
+
+  override fun onResume() {
+    super.onResume()
+    viewModelInstance?.refreshPlaybackState()
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
     setContent {
       val dapViewModel: DapViewModel = viewModel()
+      viewModelInstance = dapViewModel
       val themeSetting by dapViewModel.themeSetting.collectAsStateWithLifecycle()
       val isPortraitLocked by dapViewModel.lockPortraitFlow.collectAsStateWithLifecycle()
 

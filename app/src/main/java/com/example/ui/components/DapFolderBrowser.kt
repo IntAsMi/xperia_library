@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
@@ -44,12 +45,17 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +89,19 @@ fun DapFolderBrowser(
   val config = LocalConfiguration.current
   val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
   val scale = uiState.fontSize.scaleFactor
+
+  val focusRequester = remember { FocusRequester() }
+  val keyboardController = LocalSoftwareKeyboardController.current
+
+  LaunchedEffect(uiState.isSearchActive) {
+    if (uiState.isSearchActive) {
+      kotlinx.coroutines.delay(120L)
+      try {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+      } catch (_: Exception) {}
+    }
+  }
 
   Column(
     modifier = modifier
@@ -144,7 +163,9 @@ fun DapFolderBrowser(
               ),
               cursorBrush = SolidColor(colors.primary),
               singleLine = true,
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
             )
           }
 
@@ -464,84 +485,225 @@ fun DapFolderBrowser(
         }
       }
     } else if (isLandscape) {
-      // LANDSCAPE: Vertically Split Left (Subfolders) and Right (Audio Files)
+      // LANDSCAPE: macOS Finder Multi-Column Layout (Left: Parent Directory, Right: Current Directory)
       Row(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
       ) {
-        // Left Column: Subfolders
+        // LEFT COLUMN: Parent Directory (Lists sibling folders with active selection and expansion arrow)
         Column(
           modifier = Modifier
-            .weight(1f)
+            .weight(1.05f)
             .fillMaxHeight()
             .border(width = 0.5.dp, color = colors.outline.copy(alpha = 0.25f))
         ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .background(Color(0xFF141722))
-              .padding(horizontal = 12.dp, vertical = 4.dp)
+              .background(Color(0xFF131722))
+              .padding(horizontal = 10.dp, vertical = 6.dp)
           ) {
-            Text(
-              text = "SUBFOLDERS (${uiState.subfolders.size})",
-              color = colors.primary,
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "PARENT: ${uiState.parentFolderName.uppercase()}",
+                color = colors.primary,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              if (uiState.folderHistory.isNotEmpty()) {
+                Box(
+                  modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(colors.primary.copy(alpha = 0.2f))
+                    .clickable { onNavigateUp() }
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                  Text(
+                    text = "▲ UP",
+                    color = colors.primary,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+              }
+            }
           }
 
           LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 70.dp)
+            contentPadding = PaddingValues(bottom = 40.dp)
           ) {
-            items(uiState.subfolders, key = { "sub_${it.uriString}" }) { folder ->
-              FolderRowItem(
-                folder = folder,
-                scale = scale,
-                onClick = { onOpenFolder(folder) }
-              )
-              HorizontalDivider(color = colors.outline.copy(alpha = 0.15f), thickness = 0.5.dp)
+            if (uiState.parentFolders.isEmpty()) {
+              item {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    text = "Top-level Root Directory",
+                    color = colors.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+              }
+            } else {
+              items(uiState.parentFolders, key = { "parent_${it.uriString}" }) { folder ->
+                val isActive = folder.uriString == uiState.currentFolderUri || folder.name.equals(uiState.currentFolderName, ignoreCase = true)
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isActive) colors.primary.copy(alpha = 0.18f) else Color.Transparent)
+                    .clickable { onOpenFolder(folder) }
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(
+                      imageVector = if (isActive) Icons.Default.FolderOpen else Icons.Default.Folder,
+                      contentDescription = null,
+                      tint = if (isActive) colors.primary else colors.onSurfaceVariant,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = folder.name,
+                      color = if (isActive) colors.primary else colors.onSurface,
+                      fontSize = (11 * scale).sp,
+                      fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                  }
+                  if (isActive) {
+                    Icon(
+                      imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                      contentDescription = "Active Folder",
+                      tint = colors.primary,
+                      modifier = Modifier.size(14.dp)
+                    )
+                  }
+                }
+                HorizontalDivider(color = colors.outline.copy(alpha = 0.12f), thickness = 0.5.dp)
+              }
             }
           }
         }
 
-        // Right Column: Audio Tracks
+        // Vertical Divider Line between Columns
+        Box(
+          modifier = Modifier
+            .width(1.dp)
+            .fillMaxHeight()
+            .background(Color(0xFF222838))
+        )
+
+        // RIGHT COLUMN: Current Directory (Lists Subfolders + Audio Tracks)
         Column(
           modifier = Modifier
-            .weight(1.3f)
+            .weight(1.35f)
             .fillMaxHeight()
         ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .background(Color(0xFF141722))
-              .padding(horizontal = 12.dp, vertical = 4.dp)
+              .background(Color(0xFF131722))
+              .padding(horizontal = 10.dp, vertical = 6.dp)
           ) {
-            Text(
-              text = "TRACKS IN CURRENT FOLDER (${uiState.audioFiles.size})",
-              color = colors.primary,
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "CURRENT: ${uiState.currentFolderName.uppercase()} (${uiState.subfolders.size} DIRS, ${uiState.audioFiles.size} TRACKS)",
+                color = Color.White,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
 
           LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 70.dp)
+            contentPadding = PaddingValues(bottom = 50.dp)
           ) {
-            items(uiState.audioFiles, key = { "track_${it.id}" }) { file ->
-              val isCurrent = file.id == currentPlayingId
-              AudioFileRowItem(
-                file = file,
-                isPlaying = isCurrent && isPlaying,
-                isCurrent = isCurrent,
-                scale = scale,
-                onClick = { onPlayTrack(file) }
-              )
-              HorizontalDivider(color = colors.outline.copy(alpha = 0.15f), thickness = 0.5.dp)
+            // Section 1: Subfolders in current directory
+            if (uiState.subfolders.isNotEmpty()) {
+              item(key = "hdr_subfolders") {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F121A))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                  Text(
+                    text = "SUBFOLDERS (${uiState.subfolders.size})",
+                    color = colors.primary,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+              }
+              items(uiState.subfolders, key = { "sub_${it.uriString}" }) { folder ->
+                FolderRowItem(
+                  folder = folder,
+                  scale = scale,
+                  onClick = { onOpenFolder(folder) }
+                )
+                HorizontalDivider(color = colors.outline.copy(alpha = 0.12f), thickness = 0.5.dp)
+              }
+            }
+
+            // Section 2: Audio Tracks in current directory
+            if (uiState.audioFiles.isNotEmpty()) {
+              item(key = "hdr_tracks") {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F121A))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                  Text(
+                    text = "AUDIO TRACKS (${uiState.audioFiles.size})",
+                    color = colors.primary,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                  )
+                }
+              }
+              items(uiState.audioFiles, key = { "track_${it.id}" }) { file ->
+                val isCurrent = file.id == currentPlayingId
+                AudioFileRowItem(
+                  file = file,
+                  isPlaying = isCurrent && isPlaying,
+                  isCurrent = isCurrent,
+                  scale = scale,
+                  onClick = { onPlayTrack(file) }
+                )
+                HorizontalDivider(color = colors.outline.copy(alpha = 0.12f), thickness = 0.5.dp)
+              }
             }
           }
         }
@@ -559,7 +721,7 @@ fun DapFolderBrowser(
 
         LazyColumn(
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(bottom = 85.dp)
+          contentPadding = PaddingValues(bottom = 120.dp)
         ) {
           // Samsung One UI Reachability Header Area
           item(key = "one_ui_reachability_header") {
@@ -918,7 +1080,7 @@ fun SearchResultsView(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(bottom = 80.dp)
+    contentPadding = PaddingValues(bottom = 120.dp)
   ) {
     item {
       Row(

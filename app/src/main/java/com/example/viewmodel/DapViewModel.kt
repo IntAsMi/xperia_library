@@ -9,6 +9,8 @@ import com.example.data.FolderRepository
 import com.example.model.AudioFileItem
 import com.example.model.AudioPhaseMode
 import com.example.model.ChannelMode
+import com.example.model.CrossfeedMode
+import com.example.model.DacFilterProfile
 import com.example.model.DapFontSize
 import com.example.model.DapPlayerState
 import com.example.model.DapThemeSetting
@@ -48,6 +50,8 @@ data class DapUiState(
   val searchQuery: String = "",
   val searchTracks: List<AudioFileItem> = emptyList(),
   val searchFolders: List<FolderItem> = emptyList(),
+  val parentFolders: List<FolderItem> = emptyList(),
+  val parentFolderName: String = "Parent Directory",
   val isBitPerfectForced: Boolean = true
 )
 
@@ -55,7 +59,7 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   private val context = application.applicationContext
   private val prefs = DapPreferences(context)
   private val repository = FolderRepository(context)
-  val player = DapAudioPlayer(context)
+  val player = DapAudioPlayer.getInstance(context)
 
   private val _uiState = MutableStateFlow(
     DapUiState(
@@ -83,30 +87,38 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   private fun loadInitialFolder() {
     viewModelScope.launch {
       val savedRoot = prefs.getRootFolderUri()
-      val savedLast = prefs.getLastVisitedFolderUri() ?: savedRoot
-
+      // Always open directly to the Root Folder as requested
       _uiState.value = _uiState.value.copy(
         rootFolderUri = savedRoot,
-        currentFolderUri = savedLast,
+        currentFolderUri = savedRoot,
+        folderHistory = emptyList(),
         isLoading = true
       )
 
       val (folders, files) = repository.loadFolderContents(
-        folderUriString = savedLast,
+        folderUriString = savedRoot,
         rootUriString = savedRoot
       )
 
-      val friendlyPath = if (savedLast != null) extractFriendlyPath(savedLast) else "/Music"
-      val folderName = if (savedLast != null) friendlyPath.substringAfterLast("/") else "Music Root"
+      val friendlyPath = if (savedRoot != null) extractFriendlyPath(savedRoot) else "/Music"
+      val folderName = if (savedRoot != null) friendlyPath.substringAfterLast("/").ifBlank { "Music Root" } else "Music Root"
 
       _uiState.value = _uiState.value.copy(
         subfolders = folders,
         audioFiles = files,
         currentFolderPath = friendlyPath,
-        currentFolderName = if (folderName.isBlank()) "Music Root" else folderName,
+        currentFolderName = folderName,
         isLoading = false
       )
     }
+  }
+
+  fun refreshShizukuStatus() {
+    player.outputManager.shizukuController.refreshStatus()
+  }
+
+  fun refreshPlaybackState() {
+    player.refreshPlaybackState()
   }
 
   fun setRootFolder(uri: Uri) {
@@ -142,12 +154,16 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
 
   fun openFolder(folder: FolderItem) {
     val prevHistory = _uiState.value.folderHistory + (_uiState.value.currentFolderUri to _uiState.value.currentFolderPath)
+    val prevFolders = _uiState.value.subfolders
+    val prevName = _uiState.value.currentFolderName
     prefs.setLastVisitedFolderUri(folder.uriString)
 
     _uiState.value = _uiState.value.copy(
       currentFolderUri = folder.uriString,
       currentFolderPath = folder.path,
       currentFolderName = folder.name,
+      parentFolders = if (prevFolders.isNotEmpty()) prevFolders else _uiState.value.parentFolders,
+      parentFolderName = prevName,
       folderHistory = prevHistory,
       isLoading = true
     )
@@ -202,6 +218,43 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
 
     viewModelScope.launch {
       val (sub, files) = repository.loadFolderContents(last.first, _uiState.value.rootFolderUri)
+      _uiState.value = _uiState.value.copy(
+        subfolders = sub,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun navigateToRoot() {
+    val root = _uiState.value.rootFolderUri
+    _uiState.value = _uiState.value.copy(
+      currentFolderUri = root,
+      currentFolderPath = if (root != null) extractFriendlyPath(root) else "/Music",
+      currentFolderName = if (root != null) extractFriendlyPath(root).substringAfterLast("/").ifBlank { "Music Root" } else "Music Root",
+      folderHistory = emptyList(),
+      isLoading = true
+    )
+    viewModelScope.launch {
+      val (sub, files) = repository.loadFolderContents(root, root)
+      _uiState.value = _uiState.value.copy(
+        subfolders = sub,
+        audioFiles = files,
+        isLoading = false
+      )
+    }
+  }
+
+  fun navigateToTopmostRoot() {
+    _uiState.value = _uiState.value.copy(
+      currentFolderUri = null,
+      currentFolderPath = "/Music",
+      currentFolderName = "Music Root",
+      folderHistory = emptyList(),
+      isLoading = true
+    )
+    viewModelScope.launch {
+      val (sub, files) = repository.loadFolderContents(null, null)
       _uiState.value = _uiState.value.copy(
         subfolders = sub,
         audioFiles = files,
@@ -335,6 +388,9 @@ class DapViewModel(application: Application) : AndroidViewModel(application) {
   fun setAudioPhaseMode(mode: AudioPhaseMode) = player.setAudioPhaseMode(mode)
   fun setChannelMode(mode: ChannelMode) = player.setChannelMode(mode)
   fun setVisualizerChannelMode(mode: VisualizerChannelMode) = player.setVisualizerChannelMode(mode)
+  fun setCrossfeedMode(mode: CrossfeedMode) = player.setCrossfeedMode(mode)
+  fun setDacFilterProfile(profile: DacFilterProfile) = player.setDacFilterProfile(profile)
+  fun testShizukuConnection() = player.testShizukuConnection()
   fun selectOutputDevice(deviceId: Int) = player.selectOutputDevice(deviceId)
   fun setSleepTimer(option: SleepTimerOption) = player.setSleepTimer(option)
 

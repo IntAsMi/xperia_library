@@ -87,6 +87,7 @@ fun DapNowPlaying(
   onOpenAudioTuning: () -> Unit,
   onTogglePhase: () -> Unit = {},
   onSetChannelMode: (com.example.model.ChannelMode) -> Unit = {},
+  onSetCrossfeed: (com.example.model.CrossfeedMode) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   BackHandler(onBack = onClose)
@@ -105,24 +106,46 @@ fun DapNowPlaying(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(top = 8.dp, bottom = 4.dp),
+        .padding(top = if (isLandscape) 4.dp else 8.dp, bottom = 4.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      IconButton(onClick = onClose) {
-        Icon(
-          imageVector = Icons.Default.KeyboardArrowDown,
-          contentDescription = "Collapse Now Playing",
-          tint = colors.onBackground,
-          modifier = Modifier.size(28.dp)
-        )
+      if (!isLandscape) {
+        IconButton(onClick = onClose) {
+          Icon(
+            imageVector = Icons.Default.KeyboardArrowDown,
+            contentDescription = "Collapse Now Playing",
+            tint = colors.onBackground,
+            modifier = Modifier.size(28.dp)
+          )
+        }
+      } else {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.padding(start = 4.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(7.dp)
+              .clip(CircleShape)
+              .background(Color(0xFF00E676))
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = "DAP CONSOLE [LIVE]",
+            color = colors.primary,
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
       }
 
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
           text = "NOW PLAYING",
           color = colors.primary,
-          fontSize = 12.sp,
+          fontSize = if (isLandscape) 11.sp else 12.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           letterSpacing = 2.sp
@@ -131,7 +154,7 @@ fun DapNowPlaying(
           Text(
             text = "Track ${playerState.currentTrackIndex + 1} of ${playerState.currentFolderTracks.size} (Disk ${playerState.currentDiskNumber})",
             color = colors.onSurfaceVariant,
-            fontSize = 11.sp,
+            fontSize = if (isLandscape) 9.5.sp else 11.sp,
             fontFamily = FontFamily.Monospace
           )
         }
@@ -209,160 +232,84 @@ fun DapNowPlaying(
       }
     }
 
-    if (isLandscape) {
-      // LANDSCAPE MODE: Two vertical split columns
-      Row(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(top = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-      ) {
-        // Left Column: Visualizer, VU Meters, Specs, and Output Spec
-        Column(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState()),
-          verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          TrackInfoBanner(track = track)
-          OutputSpecBanner(spec = playerState.audioOutputSpec, onClick = onOpenAudioTuning)
-          QuickAudioTuningStrip(
-            channelMode = playerState.channelMode,
-            isPhaseInverted = playerState.audioPhaseInverted,
-            onSetChannelMode = onSetChannelMode,
-            onTogglePhase = onTogglePhase,
-            onOpenAudioTuning = onOpenAudioTuning
-          )
-          ReactiveSpectrumVisualizer(
-            bands = playerState.spectrumBands,
-            bandsLeft = playerState.spectrumBandsLeft,
-            bandsRight = playerState.spectrumBandsRight,
-            channelMode = playerState.channelMode
-          )
-          StereoVuMeter(
-            left = playerState.peakMeterLeft,
-            right = playerState.peakMeterRight,
-            channelMode = playerState.channelMode
-          )
-          TechnicalSpecsGrid(track = track, playerState = playerState)
-        }
+    // Unified Technical Audio Layout for Portrait and Landscape side panes
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      TrackInfoBanner(track = track)
 
-        // Right Column: Waveform Scrubber, 3-Level Timings, Tactile Buttons, Extras
-        Column(
-          modifier = Modifier
-            .weight(1.15f)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState()),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          // Song Waveform in Progress Line
-          DapWaveformScrubber(
-            waveformPoints = track.waveform,
-            waveformLeft = track.waveformLeft,
-            waveformRight = track.waveformRight,
-            channelMode = playerState.channelMode,
-            positionMs = playerState.positionMs,
-            durationMs = playerState.durationMs,
-            onSeekTo = onSeekTo
-          )
+      OutputSpecBanner(
+        spec = playerState.audioOutputSpec,
+        playerState = playerState,
+        onClick = onOpenAudioTuning
+      )
 
-          // 3-Level Timings (Song, Disk, Folder)
-          MultiLevelTimingsBox(playerState = playerState)
+      QuickAudioTuningStrip(
+        channelMode = playerState.channelMode,
+        audioPhaseMode = playerState.audioPhaseMode,
+        crossfeedMode = playerState.crossfeedMode,
+        onSetChannelMode = onSetChannelMode,
+        onTogglePhase = onTogglePhase,
+        onSetCrossfeed = onSetCrossfeed,
+        onOpenAudioTuning = onOpenAudioTuning
+      )
 
-          // Clearly displayed buttons with Tap & Hold
-          TactileControlsRow(
-            isPlaying = playerState.isPlaying,
-            onTogglePlayPause = onTogglePlayPause,
-            onSkipNext = onSkipNext,
-            onSkipPrevious = onSkipPrevious,
-            onFastForward = onFastForwardStep,
-            onFastRewind = onFastRewindStep
-          )
+      // Monochromatic High-Density Left and Right Waveform Scrubber
+      DapWaveformScrubber(
+        waveformPoints = track.waveform,
+        waveformLeft = track.waveformLeft,
+        waveformRight = track.waveformRight,
+        channelMode = playerState.channelMode,
+        audioPhaseMode = playerState.audioPhaseMode,
+        positionMs = playerState.positionMs,
+        durationMs = playerState.durationMs,
+        onSeekTo = onSeekTo
+      )
 
-          // Extras: Speed & Looper
-          AudiophileExtrasBox(
-            playerState = playerState,
-            onSetSpeed = onSetSpeed,
-            onSetLoopA = onSetLoopA,
-            onSetLoopB = onSetLoopB,
-            onClearLoop = onClearLoop
-          )
-        }
-      }
-    } else {
-      // PORTRAIT MODE: Unified technical stack with generous spacing
-      Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-      ) {
-        TrackInfoBanner(track = track)
+      // 3-Level Timings (Song, Disk, Folder)
+      MultiLevelTimingsBox(playerState = playerState)
 
-        OutputSpecBanner(spec = playerState.audioOutputSpec, onClick = onOpenAudioTuning)
+      // Tactile Transport Controls
+      TactileControlsRow(
+        isPlaying = playerState.isPlaying,
+        onTogglePlayPause = onTogglePlayPause,
+        onSkipNext = onSkipNext,
+        onSkipPrevious = onSkipPrevious,
+        onFastForward = onFastForwardStep,
+        onFastRewind = onFastRewindStep
+      )
 
-        QuickAudioTuningStrip(
-          channelMode = playerState.channelMode,
-          isPhaseInverted = playerState.audioPhaseInverted,
-          onSetChannelMode = onSetChannelMode,
-          onTogglePhase = onTogglePhase,
-          onOpenAudioTuning = onOpenAudioTuning
-        )
+      // Real Reactive 32-Band Stereo Spectrum Visualizer
+      ReactiveSpectrumVisualizer(
+        bands = playerState.spectrumBands,
+        bandsLeft = playerState.spectrumBandsLeft,
+        bandsRight = playerState.spectrumBandsRight,
+        channelMode = playerState.channelMode
+      )
 
-        // Real Reactive 32-Band Stereo Spectrum Visualizer
-        ReactiveSpectrumVisualizer(
-          bands = playerState.spectrumBands,
-          bandsLeft = playerState.spectrumBandsLeft,
-          bandsRight = playerState.spectrumBandsRight,
-          channelMode = playerState.channelMode
-        )
+      // Real Stereo Peak dB VU Meter
+      StereoVuMeter(
+        left = playerState.peakMeterLeft,
+        right = playerState.peakMeterRight,
+        channelMode = playerState.channelMode
+      )
 
-        // Real Stereo Peak dB VU Meter
-        StereoVuMeter(
-          left = playerState.peakMeterLeft,
-          right = playerState.peakMeterRight,
-          channelMode = playerState.channelMode
-        )
+      // Extras: Speed & A-B Looper
+      AudiophileExtrasBox(
+        playerState = playerState,
+        onSetSpeed = onSetSpeed,
+        onSetLoopA = onSetLoopA,
+        onSetLoopB = onSetLoopB,
+        onClearLoop = onClearLoop
+      )
 
-        // Song Waveform Progress Scrubber with distinct Left & Right channels
-        DapWaveformScrubber(
-          waveformPoints = track.waveform,
-          waveformLeft = track.waveformLeft,
-          waveformRight = track.waveformRight,
-          channelMode = playerState.channelMode,
-          positionMs = playerState.positionMs,
-          durationMs = playerState.durationMs,
-          onSeekTo = onSeekTo
-        )
+      // Complete Technical Specs Grid
+      TechnicalSpecsGrid(track = track, playerState = playerState)
 
-        // 3-Level Timings (Song, Disk, Folder)
-        MultiLevelTimingsBox(playerState = playerState)
-
-        // Clearly visible Tactile Controls with Tap and Hold functionality
-        TactileControlsRow(
-          isPlaying = playerState.isPlaying,
-          onTogglePlayPause = onTogglePlayPause,
-          onSkipNext = onSkipNext,
-          onSkipPrevious = onSkipPrevious,
-          onFastForward = onFastForwardStep,
-          onFastRewind = onFastRewindStep
-        )
-
-        // Complete Technical Specs Grid
-        TechnicalSpecsGrid(track = track, playerState = playerState)
-
-        // Extras: Speed & A-B Looper
-        AudiophileExtrasBox(
-          playerState = playerState,
-          onSetSpeed = onSetSpeed,
-          onSetLoopA = onSetLoopA,
-          onSetLoopB = onSetLoopB,
-          onClearLoop = onClearLoop
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-      }
+      Spacer(modifier = Modifier.height(28.dp))
     }
   }
 }
@@ -419,7 +366,11 @@ fun TrackInfoBanner(track: com.example.model.AudioFileItem) {
 }
 
 @Composable
-fun OutputSpecBanner(spec: com.example.model.AudioOutputSpec, onClick: () -> Unit) {
+fun OutputSpecBanner(
+  spec: com.example.model.AudioOutputSpec,
+  playerState: com.example.model.DapPlayerState? = null,
+  onClick: () -> Unit
+) {
   val colors = MaterialTheme.colorScheme
   Box(
     modifier = Modifier
@@ -462,19 +413,54 @@ fun OutputSpecBanner(spec: com.example.model.AudioOutputSpec, onClick: () -> Uni
         }
       }
 
-      Box(
-        modifier = Modifier
-          .clip(RoundedCornerShape(3.dp))
-          .background(colors.surfaceVariant)
-          .padding(horizontal = 6.dp, vertical = 2.dp)
-      ) {
-        Text(
-          text = "ROUTE ⚙",
-          color = colors.primary,
-          fontSize = 9.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace
-        )
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // High-visibility Shizuku Bit-Perfect Status Indicator Badge
+        if (playerState != null) {
+          Box(
+            modifier = Modifier
+              .clip(RoundedCornerShape(3.dp))
+              .background(
+                if (playerState.isShizukuPrivileged) Color(0xFF00E676).copy(alpha = 0.2f)
+                else if (playerState.isShizukuRunning) Color(0xFFFFA726).copy(alpha = 0.2f)
+                else colors.surfaceVariant
+              )
+              .border(
+                0.6.dp,
+                if (playerState.isShizukuPrivileged) Color(0xFF00E676)
+                else if (playerState.isShizukuRunning) Color(0xFFFFA726)
+                else colors.outline.copy(alpha = 0.3f),
+                RoundedCornerShape(3.dp)
+              )
+              .padding(horizontal = 5.dp, vertical = 2.dp)
+          ) {
+            Text(
+              text = if (playerState.isShizukuPrivileged) "SHIZUKU: 1:1 HAL"
+              else if (playerState.isShizukuRunning) "SHIZUKU: AUTH"
+              else "HAL DIRECT",
+              color = if (playerState.isShizukuPrivileged) Color(0xFF00E676)
+              else if (playerState.isShizukuRunning) Color(0xFFFFA726)
+              else colors.onSurfaceVariant,
+              fontSize = 8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+        }
+
+        Box(
+          modifier = Modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(colors.surfaceVariant)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+          Text(
+            text = "ROUTE ⚙",
+            color = colors.primary,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
       }
     }
   }
@@ -483,9 +469,11 @@ fun OutputSpecBanner(spec: com.example.model.AudioOutputSpec, onClick: () -> Uni
 @Composable
 fun QuickAudioTuningStrip(
   channelMode: com.example.model.ChannelMode,
-  isPhaseInverted: Boolean,
+  audioPhaseMode: com.example.model.AudioPhaseMode,
+  crossfeedMode: com.example.model.CrossfeedMode = com.example.model.CrossfeedMode.OFF,
   onSetChannelMode: (com.example.model.ChannelMode) -> Unit,
   onTogglePhase: () -> Unit,
+  onSetCrossfeed: (com.example.model.CrossfeedMode) -> Unit = {},
   onOpenAudioTuning: () -> Unit
 ) {
   val colors = MaterialTheme.colorScheme
@@ -504,39 +492,81 @@ fun QuickAudioTuningStrip(
 
     Box(
       modifier = Modifier
-        .weight(1.3f)
+        .weight(1.1f)
         .clip(RoundedCornerShape(6.dp))
         .background(Color(0xFF141822))
         .border(1.dp, if (channelMode != com.example.model.ChannelMode.STEREO) colors.primary else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
         .clickable { onSetChannelMode(nextMode) }
-        .padding(horizontal = 8.dp, vertical = 6.dp),
+        .padding(horizontal = 6.dp, vertical = 6.dp),
       contentAlignment = Alignment.Center
     ) {
       Text(
         text = "CH: ${channelMode.displayName.uppercase()}",
         color = if (channelMode != com.example.model.ChannelMode.STEREO) colors.primary else colors.onSurface,
-        fontSize = 9.sp,
+        fontSize = 8.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1
       )
     }
 
-    // Phase Inversion Quick Toggle
+    // Phase Inversion Quick Toggle (Single side / specific inversion display)
+    val isInv = audioPhaseMode != com.example.model.AudioPhaseMode.NORMAL
+    val phaseLabel = when (audioPhaseMode) {
+      com.example.model.AudioPhaseMode.NORMAL -> "PHASE: 0°"
+      com.example.model.AudioPhaseMode.INVERT_LEFT_ONLY -> "PHASE: -L INV"
+      com.example.model.AudioPhaseMode.INVERT_RIGHT_ONLY -> "PHASE: -R INV"
+      com.example.model.AudioPhaseMode.INVERT_BOTH -> "PHASE: -L-R"
+      com.example.model.AudioPhaseMode.SWAP_CHANNELS -> "PHASE: SWAP"
+    }
+
     Box(
       modifier = Modifier
-        .weight(1.3f)
+        .weight(1.1f)
         .clip(RoundedCornerShape(6.dp))
         .background(Color(0xFF141822))
-        .border(1.dp, if (isPhaseInverted) Color(0xFFFF5252) else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+        .border(1.dp, if (isInv) Color(0xFFFF5252) else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
         .clickable { onTogglePhase() }
-        .padding(horizontal = 8.dp, vertical = 6.dp),
+        .padding(horizontal = 6.dp, vertical = 6.dp),
       contentAlignment = Alignment.Center
     ) {
       Text(
-        text = if (isPhaseInverted) "PHASE: 180° (INV)" else "PHASE: 0° (NORM)",
-        color = if (isPhaseInverted) Color(0xFFFF5252) else colors.onSurface,
-        fontSize = 9.sp,
+        text = phaseLabel,
+        color = if (isInv) Color(0xFFFF5252) else colors.onSurface,
+        fontSize = 8.5.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1
+      )
+    }
+
+    // Crossfeed Quick Toggle
+    val nextCrossfeed = when (crossfeedMode) {
+      com.example.model.CrossfeedMode.OFF -> com.example.model.CrossfeedMode.CHU_MOY
+      com.example.model.CrossfeedMode.CHU_MOY -> com.example.model.CrossfeedMode.JAN_MEIER
+      com.example.model.CrossfeedMode.JAN_MEIER -> com.example.model.CrossfeedMode.OFF
+    }
+    val isXfeedOn = crossfeedMode != com.example.model.CrossfeedMode.OFF
+    val xfeedLabel = when (crossfeedMode) {
+      com.example.model.CrossfeedMode.OFF -> "XFEED: OFF"
+      com.example.model.CrossfeedMode.CHU_MOY -> "XFEED: MOY"
+      com.example.model.CrossfeedMode.JAN_MEIER -> "XFEED: MEIER"
+    }
+
+    Box(
+      modifier = Modifier
+        .weight(1.1f)
+        .clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFF141822))
+        .border(1.dp, if (isXfeedOn) colors.primary else colors.outline.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+        .clickable { onSetCrossfeed(nextCrossfeed) }
+        .padding(horizontal = 6.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Text(
+        text = xfeedLabel,
+        color = if (isXfeedOn) colors.primary else colors.onSurface,
+        fontSize = 8.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1
@@ -557,7 +587,7 @@ fun QuickAudioTuningStrip(
       Text(
         text = "TUNING ⚙",
         color = colors.primary,
-        fontSize = 9.sp,
+        fontSize = 8.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1

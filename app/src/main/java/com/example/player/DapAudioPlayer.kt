@@ -50,6 +50,17 @@ import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 class DapAudioPlayer(private val context: Context) {
+  companion object {
+    @Volatile
+    private var instance: DapAudioPlayer? = null
+
+    fun getInstance(context: Context): DapAudioPlayer {
+      return instance ?: synchronized(this) {
+        instance ?: DapAudioPlayer(context.applicationContext).also { instance = it }
+      }
+    }
+  }
+
   private val scope = CoroutineScope(Dispatchers.Main)
   private var player: ExoPlayer? = null
   private var mediaSession: MediaSession? = null
@@ -67,6 +78,7 @@ class DapAudioPlayer(private val context: Context) {
   private val _state = MutableStateFlow(DapPlayerState())
   val state: StateFlow<DapPlayerState> = _state.asStateFlow()
 
+  private val prefs = com.example.data.DapPreferences(context)
   private var activePlaylist: List<AudioFileItem> = emptyList()
   private var currentSleepOption: SleepTimerOption = SleepTimerOption.OFF
   var isHapticEnabled: Boolean = true
@@ -84,8 +96,41 @@ class DapAudioPlayer(private val context: Context) {
 
   init {
     initPlayer()
+    restoreLastTrackState()
     registerWidgetReceiver()
     observeOutputAndVisualizer()
+  }
+
+  private fun restoreLastTrackState() {
+    try {
+      val lastUri = prefs.getLastPlayedTrackUri() ?: return
+      val lastTitle = prefs.getLastPlayedTrackTitle() ?: return
+      val lastCodec = prefs.getLastPlayedTrackCodec()
+      val lastDuration = prefs.getLastPlayedTrackDuration()
+      val lastPos = prefs.getLastPlayedTrackPosition()
+      val lastSr = prefs.getLastPlayedTrackSampleRate()
+      val lastBd = prefs.getLastPlayedTrackBitDepth()
+
+      val restoredTrack = AudioFileItem(
+        id = lastUri,
+        uriString = lastUri,
+        title = lastTitle,
+        fileName = lastTitle,
+        extension = ".${lastCodec.lowercase()}",
+        filePath = lastUri,
+        durationMs = lastDuration,
+        sizeBytes = 15_000_000L,
+        sampleRate = lastSr,
+        bitDepth = lastBd,
+        codec = lastCodec
+      )
+      _state.value = _state.value.copy(
+        currentTrack = restoredTrack,
+        positionMs = lastPos,
+        durationMs = lastDuration
+      )
+      extractWaveformForTrack(restoredTrack)
+    } catch (_: Exception) {}
   }
 
   private fun registerWidgetReceiver() {
@@ -143,7 +188,11 @@ class DapAudioPlayer(private val context: Context) {
       outputManager.shizukuStatus.collect { sStatus ->
         _state.value = _state.value.copy(
           shizukuReport = sStatus.hardwareSinkReport,
-          isShizukuPrivileged = sStatus.isPermissionGranted
+          isShizukuPrivileged = sStatus.isPermissionGranted,
+          isShizukuRunning = sStatus.isRunning,
+          isShizukuInstalled = sStatus.isInstalled,
+          shizukuPingResult = sStatus.pingTestResult,
+          shizukuPingLatencyMs = sStatus.pingLatencyMs
         )
       }
     }
@@ -289,6 +338,7 @@ class DapAudioPlayer(private val context: Context) {
           DapWidgetUpdater.updateAll(context, _state.value)
           extractWaveformForTrack(track)
           resolveAndApplyGenuineSpecs(track)
+          prefs.saveLastPlayedTrack(track.uriString, track.title, track.codec, track.durationMs, 0L, track.sampleRate, track.bitDepth)
 
           // Sleep timer check: End of Track
           if (currentSleepOption == SleepTimerOption.END_OF_TRACK && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -555,13 +605,13 @@ class DapAudioPlayer(private val context: Context) {
   }
 
   /**
-   * Toggles audio phase between 0° (normal) and 180° (inverted).
-   * This is actively processed in real-time by AudiophileDspAudioProcessor on the actual audio output!
+   * Toggles audio phase between 0° (normal) and 180° Left-only inversion.
+   * Single-side inversion corrects headphone cables soldered with inverse polarity on one wire!
    */
   fun toggleAudioPhase() {
     performTactileFeedback()
     val newMode = if (_state.value.audioPhaseMode == com.example.model.AudioPhaseMode.NORMAL) {
-      com.example.model.AudioPhaseMode.INVERT_BOTH
+      com.example.model.AudioPhaseMode.INVERT_LEFT_ONLY // Flipping ONE side only as requested
     } else {
       com.example.model.AudioPhaseMode.NORMAL
     }
@@ -576,6 +626,28 @@ class DapAudioPlayer(private val context: Context) {
       audioPhaseMode = mode,
       audioPhaseInverted = mode != com.example.model.AudioPhaseMode.NORMAL
     )
+  }
+
+  fun setCrossfeedMode(mode: com.example.model.CrossfeedMode) {
+    performTactileFeedback()
+    dspAudioProcessor.crossfeedMode = mode
+    _state.value = _state.value.copy(crossfeedMode = mode)
+  }
+
+  fun setDacFilterProfile(profile: com.example.model.DacFilterProfile) {
+    performTactileFeedback()
+    dspAudioProcessor.dacFilterProfile = profile
+    _state.value = _state.value.copy(dacFilterProfile = profile)
+  }
+
+  fun testShizukuConnection() {
+    performTactileFeedback()
+    _state.value = _state.value.copy(isCheckingShizuku = true)
+    outputManager.testShizukuConnection()
+    scope.launch {
+      delay(300L)
+      _state.value = _state.value.copy(isCheckingShizuku = false)
+    }
   }
 
   /**
@@ -733,5 +805,30 @@ class DapAudioPlayer(private val context: Context) {
     } catch (_: Exception) {}
     player?.release()
     player = null
+  }
+
+  fun refreshPlaybackState() {
+    val exo = player ?: return
+    val isPlaying = exo.isPlaying
+    val pos = exo.currentPosition.coerceAtLeast(0L)
+    val dur = exo.duration.coerceAtLeast(0L)
+    val idx = exo.currentMediaItemIndex
+
+    if (activePlaylist.isNotEmpty() && idx in activePlaylist.indices) {
+      val track = activePlaylist[idx]
+      _state.value = _state.value.copy(
+        currentTrack = track,
+        currentTrackIndex = idx,
+        isPlaying = isPlaying,
+        positionMs = pos,
+        durationMs = if (dur > 0L) dur else track.durationMs
+      )
+      updateTimings(idx, pos)
+      if (isPlaying && pollingJob == null) {
+        startPositionPolling()
+      }
+    } else if (_state.value.currentTrack == null) {
+      restoreLastTrackState()
+    }
   }
 }

@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,10 +40,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -88,7 +93,7 @@ fun DapMainScreen(
 
   val activity = context as? android.app.Activity
 
-  // Handle hardware / gesture Back - Never stop music on exit
+  // Handle hardware / gesture Back - Navigate backward towards root folder, never exit accidentally
   BackHandler {
     if (uiState.isSearchActive) {
       viewModel.setSearchActive(false)
@@ -98,13 +103,16 @@ fun DapMainScreen(
       viewModel.setAudioTuningDrawerOpen(false)
     } else if (!isLandscape && uiState.isNowPlayingExpanded) {
       viewModel.setNowPlayingExpanded(false)
-    } else if (uiState.folderHistory.isNotEmpty()) {
+    } else if (uiState.folderHistory.isNotEmpty() || (uiState.currentFolderUri != null && uiState.currentFolderUri != uiState.rootFolderUri)) {
       viewModel.navigateUp()
     } else {
-      // Keep music playing when exiting the app via back button
+      // Keep music playing when exiting the app via back button at root folder
       activity?.moveTaskToBack(true)
     }
   }
+
+  // Adjustable landscape split pane ratio (default ~46% browser, ~54% now playing)
+  var landscapeSplitRatio by remember { mutableFloatStateOf(0.46f) }
 
   Scaffold(
     modifier = modifier.fillMaxSize(),
@@ -117,51 +125,75 @@ fun DapMainScreen(
         .padding(paddingValues)
     ) {
       if (isLandscape) {
-        // LANDSCAPE MODE: Side-by-Side Dual Pane
-        // Left: Folder Browser (Navigate Folders)
-        // Right: Now Playing Screen (Live Waveform, Visualizer, Bit-Perfect Specs, VU Meters)
-        Row(
-          modifier = Modifier.fillMaxSize()
-        ) {
-          // LEFT PANE: Folder Navigator
-          Box(
-            modifier = Modifier
-              .weight(1.05f)
-              .fillMaxHeight()
-          ) {
-            DapFolderBrowser(
-              uiState = uiState,
-              currentPlayingId = playerState.currentTrack?.id,
-              isPlaying = playerState.isPlaying,
-              onOpenFolder = { folder -> viewModel.openFolder(folder) },
-              onNavigateUp = { viewModel.navigateUp() },
-              onPlayTrack = { track -> viewModel.playTrack(track) },
-              onPlayFolder = { shuffle -> viewModel.playCurrentFolder(shuffle) },
-              onSelectFolderClick = { folderPickerLauncher.launch(null) },
-              onRefreshClick = { viewModel.refreshFolder() },
-              onScanLibraryClick = { viewModel.triggerLibraryScan() },
-              onSettingsClick = { viewModel.setSettingsOpen(true) },
-              onToggleSearch = { active -> viewModel.setSearchActive(active) },
-              onSearchQueryChange = { q -> viewModel.updateSearchQuery(q) },
-              modifier = Modifier.fillMaxSize()
-            )
-          }
+        // LANDSCAPE MODE: Adjustable Split Panes (Left: Finder Browser, Right: Now Playing)
+        androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+          val totalWidthPx = constraints.maxWidth.toFloat()
 
-          // Subtle vertical dividing border
-          Box(
-            modifier = Modifier
-              .width(1.dp)
-              .fillMaxHeight()
-              .background(Color(0xFF202533))
-          )
-
-          // RIGHT PANE: Now Playing Screen
-          Box(
-            modifier = Modifier
-              .weight(1.35f)
-              .fillMaxHeight()
-              .background(Color(0xFF0C0E14))
+          Row(
+            modifier = Modifier.fillMaxSize()
           ) {
+            // LEFT PANE: macOS Finder Style Dual-Column Folder Navigator
+            Box(
+              modifier = Modifier
+                .weight(landscapeSplitRatio)
+                .fillMaxHeight()
+            ) {
+              DapFolderBrowser(
+                uiState = uiState,
+                currentPlayingId = playerState.currentTrack?.id,
+                isPlaying = playerState.isPlaying,
+                onOpenFolder = { folder -> viewModel.openFolder(folder) },
+                onNavigateUp = { viewModel.navigateUp() },
+                onPlayTrack = { track -> viewModel.playTrack(track) },
+                onPlayFolder = { shuffle -> viewModel.playCurrentFolder(shuffle) },
+                onSelectFolderClick = { folderPickerLauncher.launch(null) },
+                onRefreshClick = { viewModel.refreshFolder() },
+                onScanLibraryClick = { viewModel.triggerLibraryScan() },
+                onSettingsClick = { viewModel.setSettingsOpen(true) },
+                onToggleSearch = { active -> viewModel.setSearchActive(active) },
+                onSearchQueryChange = { q -> viewModel.updateSearchQuery(q) },
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+
+            // Draggable Divider Handle between Panes (Adjustable Split Window)
+            Box(
+              modifier = Modifier
+                .width(16.dp)
+                .fillMaxHeight()
+                .pointerInput(totalWidthPx) {
+                  detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    val deltaRatio = dragAmount.x / totalWidthPx
+                    landscapeSplitRatio = (landscapeSplitRatio + deltaRatio).coerceIn(0.28f, 0.72f)
+                  }
+                },
+              contentAlignment = Alignment.Center
+            ) {
+              // Center divider hairline
+              Box(
+                modifier = Modifier
+                  .width(1.dp)
+                  .fillMaxHeight()
+                  .background(Color(0xFF242A3C))
+              )
+              // Draggable grip pill indicator
+              Box(
+                modifier = Modifier
+                  .width(5.dp)
+                  .height(36.dp)
+                  .clip(RoundedCornerShape(3.dp))
+                  .background(Color(0xFF3F4964))
+              )
+            }
+
+            // RIGHT PANE: Now Playing Screen (Waveform, Visualizer, Specs, VU Meters)
+            Box(
+              modifier = Modifier
+                .weight(1f - landscapeSplitRatio)
+                .fillMaxHeight()
+                .background(Color(0xFF0C0E14))
+            ) {
             if (playerState.currentTrack != null) {
               DapNowPlaying(
                 playerState = playerState,
@@ -181,6 +213,7 @@ fun DapMainScreen(
                 onOpenAudioTuning = { viewModel.setAudioTuningDrawerOpen(true) },
                 onTogglePhase = { viewModel.toggleAudioPhase() },
                 onSetChannelMode = { mode -> viewModel.setChannelMode(mode) },
+                onSetCrossfeed = { mode -> viewModel.setCrossfeedMode(mode) },
                 modifier = Modifier.fillMaxSize()
               )
             } else {
@@ -197,8 +230,9 @@ fun DapMainScreen(
             }
           }
         }
-      } else {
-        // PORTRAIT MODE: Standard Single View + Bottom Docked MiniPlayer + Pop-up Now Playing
+      }
+    } else {
+      // PORTRAIT MODE: Standard Single View + Bottom Docked MiniPlayer + Pop-up Now Playing
         // 1. Main Folder Navigation Browser
         DapFolderBrowser(
           uiState = uiState,
@@ -258,6 +292,7 @@ fun DapMainScreen(
             onOpenAudioTuning = { viewModel.setAudioTuningDrawerOpen(true) },
             onTogglePhase = { viewModel.toggleAudioPhase() },
             onSetChannelMode = { mode -> viewModel.setChannelMode(mode) },
+            onSetCrossfeed = { mode -> viewModel.setCrossfeedMode(mode) },
             modifier = Modifier.fillMaxSize()
           )
         }
@@ -274,7 +309,10 @@ fun DapMainScreen(
           onSetChannelMode = { mode -> viewModel.setChannelMode(mode) },
           onSetVisualizerChannelMode = { vMode -> viewModel.setVisualizerChannelMode(vMode) },
           onSelectOutputDevice = { devId -> viewModel.selectOutputDevice(devId) },
+          onTestShizukuConnection = { viewModel.testShizukuConnection() },
           onRequestShizuku = { viewModel.requestShizukuPermission() },
+          onSetCrossfeedMode = { mode -> viewModel.setCrossfeedMode(mode) },
+          onSetDacFilterProfile = { profile -> viewModel.setDacFilterProfile(profile) },
           onDismiss = { viewModel.setAudioTuningDrawerOpen(false) }
         )
       }

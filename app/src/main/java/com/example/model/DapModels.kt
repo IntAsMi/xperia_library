@@ -17,10 +17,22 @@ enum class ChannelMode(val displayName: String, val description: String) {
 
 enum class AudioPhaseMode(val displayName: String, val description: String) {
   NORMAL("0° Normal (Absolute Polarity)", "Both channels normal absolute polarity"),
-  INVERT_BOTH("180° Invert Both (L + R)", "Both channels inverted (180° polarity flip)"),
-  INVERT_LEFT_ONLY("180° Invert Left Channel Only", "Left channel inverted, Right normal (Fixes inverse L cable soldering)"),
-  INVERT_RIGHT_ONLY("180° Invert Right Channel Only", "Right channel inverted, Left normal (Fixes inverse R cable soldering)"),
+  INVERT_LEFT_ONLY("180° Invert Left (-L, +R)", "Invert Left channel only (Fixes inverse L cable soldering)"),
+  INVERT_RIGHT_ONLY("180° Invert Right (+L, -R)", "Invert Right channel only (Fixes inverse R cable soldering)"),
+  INVERT_BOTH("180° Invert Both (-L, -R)", "Both channels inverted (180° absolute polarity flip)"),
   SWAP_CHANNELS("Swap L ↔ R Channels", "Reverses physical Left and Right stereo headphone wiring")
+}
+
+enum class CrossfeedMode(val displayName: String, val description: String) {
+  OFF("Crossfeed Off", "Pure isolated stereo channels (Maximum channel separation)"),
+  CHU_MOY("Bauer / Chu Moy Crossfeed", "Natural loudspeaker crossfeed (700Hz, -4.5dB, 280µs delay)"),
+  JAN_MEIER("Jan Meier Crossfeed", "Subtle binaural acoustic crossfeed (650Hz, -6dB, 320µs delay)")
+}
+
+enum class DacFilterProfile(val displayName: String, val description: String) {
+  LINEAR_PHASE_FAST("Linear Phase Fast Roll-Off", "Ultra-flat frequency response, clinical mastering transparency"),
+  MINIMUM_PHASE_SLOW("Minimum Phase Slow Roll-Off", "Analog acoustic warmth, zero pre-ringing, organic transients"),
+  NOS_DIRECT("NOS Pure Direct (Non-Oversampling)", "Bit-exact stairway reconstruction with zero digital interpolation")
 }
 
 enum class VisualizerChannelMode(val displayName: String) {
@@ -159,7 +171,14 @@ data class DapPlayerState(
   val sleepTimerRemainingSeconds: Int? = null,
   val shizukuReport: String = "Direct Bit-Perfect Mode • Zero Resampling",
   val isShizukuPrivileged: Boolean = false,
-  val bitPerfectProofReport: String = "AudioTrack direct float pass-through • 0 Hz Delta verified"
+  val isShizukuRunning: Boolean = false,
+  val isShizukuInstalled: Boolean = false,
+  val bitPerfectProofReport: String = "AudioTrack direct float pass-through • 0 Hz Delta verified",
+  val crossfeedMode: CrossfeedMode = CrossfeedMode.OFF,
+  val dacFilterProfile: DacFilterProfile = DacFilterProfile.LINEAR_PHASE_FAST,
+  val shizukuPingResult: String = "Not Tested",
+  val shizukuPingLatencyMs: Long? = null,
+  val isCheckingShizuku: Boolean = false
 ) {
   val trackRemainingMs: Long get() = (durationMs - positionMs).coerceAtLeast(0L)
   val formattedElapsed: String get() = formatDuration(positionMs)

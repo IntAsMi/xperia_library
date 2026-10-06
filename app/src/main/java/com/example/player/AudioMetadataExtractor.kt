@@ -99,7 +99,7 @@ object AudioMetadataExtractor {
       240_000L
     }
 
-    val (waveL, waveR) = generateStereoWaveform(fileName, 60)
+    val (waveL, waveR) = generateStereoWaveform(fileName, AudioWaveformExtractor.BAR_COUNT)
     val waveform = waveL.zip(waveR) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
 
     return AudioFileItem(
@@ -274,7 +274,7 @@ object AudioMetadataExtractor {
       durationMs = seconds * 1000L
     }
 
-    val (waveL, waveR) = generateStereoWaveform(fileName, 60)
+    val (waveL, waveR) = generateStereoWaveform(fileName, AudioWaveformExtractor.BAR_COUNT)
     val waveform = waveL.zip(waveR) { l, r -> ((l + r) / 2f).coerceIn(0.12f, 1.0f) }
 
     return AudioFileItem(
@@ -299,7 +299,7 @@ object AudioMetadataExtractor {
     )
   }
 
-  fun generateStereoWaveform(seedKey: String, barsCount: Int = 60): Pair<List<Float>, List<Float>> {
+  fun generateStereoWaveform(seedKey: String, barsCount: Int = AudioWaveformExtractor.BAR_COUNT): Pair<List<Float>, List<Float>> {
     val seed = seedKey.hashCode().toLong()
     val rnd = Random(seed)
     val left = mutableListOf<Float>()

@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -34,7 +33,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AudioPhaseMode
 import com.example.model.ChannelMode
+import com.example.model.formatDuration
 
 @Composable
 fun DapWaveformScrubber(
@@ -42,15 +43,18 @@ fun DapWaveformScrubber(
   waveformLeft: List<Float> = emptyList(),
   waveformRight: List<Float> = emptyList(),
   channelMode: ChannelMode = ChannelMode.STEREO,
+  audioPhaseMode: AudioPhaseMode = AudioPhaseMode.NORMAL,
   positionMs: Long,
   durationMs: Long,
   onSeekTo: (Long) -> Unit,
   modifier: Modifier = Modifier
 ) {
   val colors = MaterialTheme.colorScheme
-  val leftColor = Color(0xFF00E5FF) // Cyan for Left Channel
-  val rightColor = Color(0xFFFFB300) // Amber/Gold for Right Channel
-  val inactiveColor = Color(0xFF262A36)
+
+  // Strictly Monochromatic Technical Audio Aesthetic
+  val activeColor = Color(0xFFFFFFFF) // Pure bright white for elapsed waveform
+  val inactiveColor = Color(0xFF333846) // Dark slate for remaining unplayed waveform
+  val centerLineColor = Color(0xFF202534)
   val cursorColor = Color(0xFFFFFFFF)
 
   val progress = if (durationMs > 0L) {
@@ -61,20 +65,29 @@ fun DapWaveformScrubber(
   var dragProgress by remember { mutableFloatStateOf(0f) }
 
   val effectiveProgress = if (isDragging) dragProgress else progress
+  val previewTimeMs = (effectiveProgress * durationMs).toLong()
 
-  val defaultBars = remember { List(60) { 0.35f } }
-  val muteBars = remember { List(60) { 0.04f } }
+  // Generate ultra-dense fallback bars if track waveform hasn't loaded yet
+  val denseBarsCount = 240
+  val defaultDenseBars = remember {
+    List(denseBarsCount) { i ->
+      val t = i.toFloat() / denseBarsCount.toFloat()
+      (0.35f + 0.25f * kotlin.math.sin(t * 12f) + 0.15f * kotlin.math.cos(t * 28f)).coerceIn(0.12f, 0.95f)
+    }
+  }
+  val muteBars = remember { List(denseBarsCount) { 0.04f } }
 
+  // Channel routing filtering
   val barsL = when {
     channelMode == ChannelMode.RIGHT_ONLY -> muteBars
     channelMode == ChannelMode.MONO -> {
       if (waveformLeft.isNotEmpty() && waveformRight.isNotEmpty()) {
         waveformLeft.zip(waveformRight) { l, r -> ((l + r) / 2f).coerceIn(0.08f, 1.0f) }
-      } else waveformPoints.ifEmpty { defaultBars }
+      } else waveformPoints.ifEmpty { defaultDenseBars }
     }
     waveformLeft.isNotEmpty() -> waveformLeft
     waveformPoints.isNotEmpty() -> waveformPoints
-    else -> defaultBars
+    else -> defaultDenseBars
   }
 
   val barsR = when {
@@ -82,19 +95,19 @@ fun DapWaveformScrubber(
     channelMode == ChannelMode.MONO -> barsL
     waveformRight.isNotEmpty() -> waveformRight
     waveformPoints.isNotEmpty() -> waveformPoints
-    else -> defaultBars
+    else -> defaultDenseBars
   }
 
   Box(
     modifier = modifier
       .fillMaxWidth()
       .clip(RoundedCornerShape(8.dp))
-      .background(Color(0xFF0B0D13))
-      .border(1.dp, colors.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-      .padding(horizontal = 10.dp, vertical = 6.dp)
+      .background(Color(0xFF090B10))
+      .border(1.dp, Color(0xFF202636), RoundedCornerShape(8.dp))
+      .padding(horizontal = 10.dp, vertical = 7.dp)
   ) {
     Column {
-      // Header with Channel Indicators & Scrubber status
+      // Header: Monochromatic Stereo Indicators & Status
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -102,30 +115,38 @@ fun DapWaveformScrubber(
       ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
           Text(
-            text = "STEREO WAVEFORM [L / R]",
-            color = Color(0xFFA0A3B0),
+            text = "STEREO WAVEFORM [L/R HIGH-DENSITY]",
+            color = Color(0xFFA0A5B8),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+
+          // Left channel status indicator
+          val leftInv = audioPhaseMode == AudioPhaseMode.INVERT_LEFT_ONLY || audioPhaseMode == AudioPhaseMode.INVERT_BOTH
+          Text(
+            text = if (leftInv) "L [-180° INV]" else "L [0°]",
+            color = if (leftInv) Color(0xFFFF5252) else Color(0xFFD0D4E4),
             fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
           )
+
+          // Right channel status indicator
+          val rightInv = audioPhaseMode == AudioPhaseMode.INVERT_RIGHT_ONLY || audioPhaseMode == AudioPhaseMode.INVERT_BOTH
           Text(
-            text = "• L: CH 1 (CYAN)",
-            color = if (channelMode == ChannelMode.RIGHT_ONLY) Color(0xFF555555) else leftColor,
+            text = if (rightInv) "R [-180° INV]" else "R [0°]",
+            color = if (rightInv) Color(0xFFFF5252) else Color(0xFFD0D4E4),
             fontSize = 8.sp,
-            fontFamily = FontFamily.Monospace
-          )
-          Text(
-            text = "• R: CH 2 (GOLD)",
-            color = if (channelMode == ChannelMode.LEFT_ONLY) Color(0xFF555555) else rightColor,
-            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
           )
         }
 
         Text(
-          text = if (isDragging) "SCRUBBING..." else "SEEKABLE",
-          color = if (isDragging) colors.primary else colors.onSurfaceVariant,
-          fontSize = 8.sp,
+          text = if (isDragging) "SCRUB: ${formatDuration(previewTimeMs)}" else "${formatDuration(positionMs)} / ${formatDuration(durationMs)}",
+          color = if (isDragging) Color.White else Color(0xFFA0A5B8),
+          fontSize = 9.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace
         )
@@ -133,11 +154,11 @@ fun DapWaveformScrubber(
 
       Spacer(modifier = Modifier.height(4.dp))
 
-      // Dual-Rail Waveform Canvas
+      // High-Density Monochromatic Stereo Waveform Canvas
       Box(
         modifier = Modifier
           .fillMaxWidth()
-          .height(58.dp)
+          .height(64.dp)
           .pointerInput(durationMs) {
             detectTapGestures { offset ->
               val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
@@ -167,65 +188,56 @@ fun DapWaveformScrubber(
         Canvas(modifier = Modifier.matchParentSize()) {
           val w = size.width
           val h = size.height
-          val count = barsL.size.coerceAtLeast(1)
-          val barSpacing = 1.8.dp.toPx()
-          val totalSpacing = barSpacing * (count - 1)
-          val barWidth = ((w - totalSpacing) / count).coerceAtLeast(1.5f)
+          val countL = barsL.size.coerceAtLeast(1)
+          val countR = barsR.size.coerceAtLeast(1)
+          val count = maxOf(countL, countR).coerceAtLeast(denseBarsCount)
 
+          val barWidth = (w / count.toFloat()).coerceAtLeast(1.0f)
           val centerY = h / 2f
-          val railH = (h / 2f) - 2.dp.toPx()
+          val halfH = centerY - 1.5.dp.toPx()
           val currentPlayX = effectiveProgress * w
 
           // Draw center zero-crossing divider
           drawLine(
-            color = Color(0xFF202534),
+            color = centerLineColor,
             start = Offset(0f, centerY),
             end = Offset(w, centerY),
             strokeWidth = 1.dp.toPx()
           )
 
+          // Top Track: LEFT CHANNEL (Extends upward from center line)
           for (i in 0 until count) {
-            val barX = i * (barWidth + barSpacing)
-            val isPlayed = (barX + barWidth / 2f) <= currentPlayX
+            val amp = if (i < countL) barsL[i] else 0.25f
+            val barH = (amp * halfH).coerceAtLeast(1.dp.toPx())
+            val x = i * barWidth
+            val isPlayed = (x + barWidth) <= currentPlayX
 
-            // LEFT CHANNEL (Upper Rail - grows upwards from center)
-            val isLeftMuted = channelMode == ChannelMode.RIGHT_ONLY
-            val ampL = if (isLeftMuted) 0.03f else barsL[i].coerceIn(0.06f, 1.0f)
-            val barHL = (railH * ampL).coerceAtLeast(1.5.dp.toPx())
-            val topYL = centerY - barHL
-            val colorL = when {
-              isLeftMuted -> Color(0xFF141720)
-              isPlayed -> leftColor
-              else -> inactiveColor
-            }
+            val barColor = if (isPlayed) activeColor else inactiveColor
 
-            drawRoundRect(
-              color = colorL,
-              topLeft = Offset(barX, topYL),
-              size = Size(barWidth, barHL),
-              cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-            )
-
-            // RIGHT CHANNEL (Lower Rail - grows downwards from center)
-            val isRightMuted = channelMode == ChannelMode.LEFT_ONLY
-            val ampR = if (isRightMuted) 0.03f else barsR[i].coerceIn(0.06f, 1.0f)
-            val barHR = (railH * ampR).coerceAtLeast(1.5.dp.toPx())
-            val topYR = centerY + 1.dp.toPx()
-            val colorR = when {
-              isRightMuted -> Color(0xFF141720)
-              isPlayed -> rightColor
-              else -> inactiveColor
-            }
-
-            drawRoundRect(
-              color = colorR,
-              topLeft = Offset(barX, topYR),
-              size = Size(barWidth, barHR),
-              cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            drawRect(
+              color = barColor,
+              topLeft = Offset(x, centerY - barH),
+              size = Size((barWidth - 0.5f).coerceAtLeast(0.8f), barH)
             )
           }
 
-          // Audiophile Playhead Needle across both rails
+          // Bottom Track: RIGHT CHANNEL (Extends downward from center line)
+          for (i in 0 until count) {
+            val amp = if (i < countR) barsR[i] else 0.25f
+            val barH = (amp * halfH).coerceAtLeast(1.dp.toPx())
+            val x = i * barWidth
+            val isPlayed = (x + barWidth) <= currentPlayX
+
+            val barColor = if (isPlayed) activeColor else inactiveColor
+
+            drawRect(
+              color = barColor,
+              topLeft = Offset(x, centerY),
+              size = Size((barWidth - 0.5f).coerceAtLeast(0.8f), barH)
+            )
+          }
+
+          // Vertical Scrubber Cursor Hairline
           drawLine(
             color = cursorColor,
             start = Offset(currentPlayX, 0f),
@@ -233,7 +245,7 @@ fun DapWaveformScrubber(
             strokeWidth = 2.dp.toPx()
           )
 
-          // Playhead Center Indicator
+          // Playhead Diamond Indicator at Center
           drawCircle(
             color = cursorColor,
             radius = 3.5.dp.toPx(),
